@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<!--
+ * @name            jPulse Framework / Plugins / Auth-OAuth / WebApp / View / OAuth Error
+ * @tagline         SSO login error landing page
+ * @description     Landing page for OAuth/OIDC login failures. Never renders raw provider or
+ *                   library error text (see W-197 design doc Security Requirements) - the
+ *                   controller only ever passes a short, known `?reason=` code, and this page
+ *                   maps that code to a friendly message client-side.
+ *
+ *                   No plugin-level i18n mechanism exists in the framework yet (found during
+ *                   W-197 implementation - `webapp/translations/*.conf` only load framework/site
+ *                   strings, plugins have no equivalent). Messages below are English-only for
+ *                   now; revisit once plugin i18n loading exists.
+ * @file            plugins/auth-oauth/webapp/view/auth/oauth-error.shtml
+ * @version         1.0.0
+ * @release         2026-07-29
+ * @repository      https://github.com/jpulse-net/plugin-auth-oauth
+ * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
+ * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
+ * @license         BSL 1.1 -- see LICENSE file; for commercial use: team@jpulse.net
+ * @genai           80%, Cursor 3.12, Claude Sonnet 5
+-->
+<html {{appConfig.system.htmlAttrs}}>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign-in Error - {{app.site.shortName}}</title>
+
+    {{file.include "jpulse-header.tmpl"}}
+    <style>
+        /* Page-specific oauth-error styles only */
+        .local-oauth-error-container {
+            margin: 60px auto;
+            max-width: 480px;
+        }
+
+        .local-oauth-error-card {
+            padding: 40px;
+            text-align: center;
+            border-top: 4px solid var(--jp-theme-color-danger, #d32f2f);
+        }
+
+        .local-oauth-error-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: var(--jp-theme-color-danger, #d32f2f);
+            color: var(--jp-theme-text-inverse, #ffffff);
+            font-size: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+        }
+
+        .local-oauth-error-card h1 {
+            margin: 0 0 12px;
+            font-size: 1.5em;
+            color: var(--jp-theme-text-primary, #333);
+        }
+
+        .local-oauth-error-message {
+            color: var(--jp-theme-text-secondary, #666);
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <main class="jp-main">
+        <div class="local-oauth-error-container">
+            <div class="jp-card local-oauth-error-card">
+                <div class="local-oauth-error-icon">&#9888;</div>
+                <h1>Sign-in Failed</h1>
+                <p class="local-oauth-error-message" id="oauthErrorMessage">
+                    Something went wrong while signing you in. Please try again.
+                </p>
+                <a href="/auth/login.shtml" class="jp-btn jp-btn-primary">Back to Sign In</a>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        jPulse.dom.ready(() => {
+            // W-197: reason codes are short, known enum values set only by oauthAuth.js -
+            // never raw provider/library error text (see file header).
+            const messages = {
+                PROVIDER_ERROR: 'The identity provider reported an error, or is not configured correctly. Please try again or contact your administrator.',
+                STATE_MISMATCH: 'Your sign-in session expired or is invalid. Please start the sign-in process again.',
+                RATE_LIMITED: 'Too many sign-in attempts. Please wait a moment and try again.',
+                USER_NOT_PROVISIONED: 'No account was found for your identity provider login. Please contact your administrator to get access.',
+                EMAIL_NOT_VERIFIED_AT_PROVIDER: 'Your identity provider has not verified your email address, so it cannot be used to sign in. Please verify your email with the provider, or contact your administrator.',
+                AMBIGUOUS_EMAIL_MATCH: 'Your email address matches more than one account. Please contact your administrator to resolve this.',
+                ALREADY_LINKED_TO_ANOTHER_ACCOUNT: 'This identity provider account is already connected to a different user. Please disconnect it there first, or sign in with that account instead.',
+                ACCOUNT_LOCKED: 'This account is locked. Please contact your administrator.',
+                ACCOUNT_DISABLED: 'This account is disabled. Please contact your administrator.',
+                ACCOUNT_PENDING_APPROVAL: 'Your account is awaiting administrator approval. Please check back later.',
+                INTERNAL_ERROR: 'An unexpected error occurred. Please try again or contact your administrator.'
+            };
+
+            const reason = new URLSearchParams(location.search).get('reason');
+            const message = messages[reason] || messages.INTERNAL_ERROR;
+            document.getElementById('oauthErrorMessage').textContent = message;
+        });
+    </script>
+
+    {{file.include "jpulse-footer.tmpl"}}
+</body>
+</html>
+<!-- EOF plugins/auth-oauth/webapp/view/auth/oauth-error.shtml -->

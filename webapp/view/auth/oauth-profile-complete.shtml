@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<!--
+ * @name            jPulse Framework / Plugins / Auth-OAuth / WebApp / View / Auth / OAuth Profile Complete
+ * @tagline         jit-create Stage B: confirm/edit the draft profile before login continues
+ * @description     Rendered when the W-109 multi-step login flow's next step is
+ *                   `oauth-profile-complete` (design doc §10 Stage B) - only for jit-create users
+ *                   whose IdP didn't provide all required profile fields (see oauthAuth.js
+ *                   onAuthGetSteps()). Reads its prefill data from
+ *                   GET /api/1/auth-oauth/profile-draft (keyed by the existing
+ *                   req.session.pendingAuth - no plugin-owned session state), then submits like
+ *                   any other multi-step page: POST /api/1/auth/login
+ *                   { step: 'oauth-profile-complete', firstName, lastName, nickName } - same
+ *                   response handling as login.shtml/handleNextStep() (follow `page` if another
+ *                   step remains, else redirect to the original `redirect` URL).
+ *
+ *                   No plugin-level i18n mechanism exists in the framework yet (see oauth-error.shtml
+ *                   file header) - all strings below are English-only for now.
+ * @file            plugins/auth-oauth/webapp/view/auth/oauth-profile-complete.shtml
+ * @version         1.0.0
+ * @release         2026-07-29
+ * @repository      https://github.com/jpulse-net/plugin-auth-oauth
+ * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
+ * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
+ * @license         BSL 1.1 -- see LICENSE file; for commercial use: team@jpulse.net
+ * @genai           80%, Cursor 3.12, Claude Sonnet 5
+-->
+<html {{appConfig.system.htmlAttrs}}>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Your Profile - {{app.site.shortName}}</title>
+
+    {{file.include "jpulse-header.tmpl"}}
+    <style>
+        /* Page-specific oauth-profile-complete styles only */
+        .local-oauth-profile-container {
+            margin: 60px auto;
+            max-width: 480px;
+        }
+
+        .local-oauth-profile-card {
+            padding: 40px;
+        }
+
+        .local-oauth-profile-card h1 {
+            margin: 0 0 8px;
+            font-size: 1.5em;
+        }
+
+        .local-oauth-profile-subtitle {
+            color: var(--jp-theme-text-secondary, #666);
+            margin-bottom: 25px;
+        }
+
+        .local-oauth-profile-error {
+            color: var(--jp-theme-color-danger, #d32f2f);
+            margin-top: 10px;
+            min-height: 1.2em;
+        }
+
+        .local-oauth-profile-field {
+            display: none;
+        }
+
+        .local-oauth-profile-field.local-oauth-profile-field-visible {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <main class="jp-main">
+        <div class="local-oauth-profile-container">
+            <div class="jp-card local-oauth-profile-card">
+                <h1>Welcome, one more thing</h1>
+                <p class="local-oauth-profile-subtitle">
+                    We couldn't get all your profile info from your identity provider. Please confirm your
+                    name so we can display it correctly.
+                </p>
+
+                <form id="oauthProfileForm">
+                    <div class="jp-form-group local-oauth-profile-field" id="oauthProfileFirstNameGroup">
+                        <label for="oauthProfileFirstName">First Name</label>
+                        <input type="text" id="oauthProfileFirstName" class="jp-input" autocomplete="given-name">
+                    </div>
+                    <div class="jp-form-group local-oauth-profile-field" id="oauthProfileLastNameGroup">
+                        <label for="oauthProfileLastName">Last Name</label>
+                        <input type="text" id="oauthProfileLastName" class="jp-input" autocomplete="family-name">
+                    </div>
+                    <div class="jp-form-group local-oauth-profile-field" id="oauthProfileNickNameGroup">
+                        <label for="oauthProfileNickName">Nickname (optional)</label>
+                        <input type="text" id="oauthProfileNickName" class="jp-input" autocomplete="nickname">
+                    </div>
+
+                    <p class="local-oauth-profile-error" id="oauthProfileError"></p>
+
+                    <button type="submit" class="jp-btn jp-btn-primary" id="oauthProfileSubmit">Continue</button>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    {{file.include "jpulse-footer.tmpl"}}
+    <script>
+    (function () {
+        jPulse.dom.ready(async () => {
+            const errorEl = document.getElementById('oauthProfileError');
+            const submitBtn = document.getElementById('oauthProfileSubmit');
+            const redirectUrl = new URLSearchParams(window.location.search).get('redirect') || '/';
+
+            const draftResponse = await jPulse.api.get('/api/1/auth-oauth/profile-draft');
+            if (!draftResponse.success) {
+                // Pending state missing/expired/out-of-order (e.g. page reloaded after the step
+                // already completed, or the session timed out) - nothing to confirm here.
+                window.location.href = '/auth/login.shtml';
+                return;
+            }
+
+            const draft = draftResponse.data;
+            const missing = new Set(draft.missingFields || []);
+            ['firstName', 'lastName', 'nickName'].forEach((field) => {
+                const group = document.getElementById(`oauthProfile${field.charAt(0).toUpperCase()}${field.slice(1)}Group`);
+                const input = document.getElementById(`oauthProfile${field.charAt(0).toUpperCase()}${field.slice(1)}`);
+                input.value = draft[field] || '';
+                // Only surface fields the IdP genuinely couldn't provide (design doc §10) -
+                // the placeholder values for anything else are already good enough to keep.
+                if (missing.has(field) || field === 'nickName') {
+                    group.classList.add('local-oauth-profile-field-visible');
+                }
+            });
+
+            document.getElementById('oauthProfileForm').addEventListener('submit', async (event) => {
+                event.preventDefault();
+                errorEl.textContent = '';
+                submitBtn.disabled = true;
+
+                const response = await jPulse.api.post('/api/1/auth/login', {
+                    step: 'oauth-profile-complete',
+                    firstName: document.getElementById('oauthProfileFirstName').value.trim(),
+                    lastName: document.getElementById('oauthProfileLastName').value.trim(),
+                    nickName: document.getElementById('oauthProfileNickName').value.trim()
+                });
+
+                if (!response.success) {
+                    submitBtn.disabled = false;
+                    if (response.code === 'AUTH_EXPIRED') {
+                        window.location.href = '/auth/login.shtml';
+                        return;
+                    }
+                    errorEl.textContent = response.error || 'Failed to save your profile. Please try again.';
+                    return;
+                }
+
+                const returnParam = encodeURIComponent(redirectUrl);
+                if (response.page) {
+                    window.location.href = `${response.page}?redirect=${returnParam}`;
+                    return;
+                }
+                if (response.nextStep) {
+                    // No built-in page for this step name - fall back to the login page, which
+                    // knows how to route the framework's own step names (mirrors login.shtml).
+                    window.location.href = `/auth/login.shtml?redirect=${returnParam}`;
+                    return;
+                }
+                window.location.href = redirectUrl;
+            });
+        });
+    })();
+    </script>
+</body>
+</html>

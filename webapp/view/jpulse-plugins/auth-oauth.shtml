@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<!--
+ * @name            jPulse Framework / Plugins / Auth-OAuth / WebApp / View / jPulse Plugins / Auth-OAuth
+ * @tagline         Linked-accounts management page (connect/disconnect SSO providers)
+ * @description     Lets a signed-in user see which OAuth/OIDC providers are linked to their
+ *                   account, connect an additional one (via apiLink -> IdP redirect -> apiCallback
+ *                   'link' mode), or disconnect one (via apiUnlink, blocked when it's their only
+ *                   sign-in method and they have no usable local password - design doc §11).
+ *
+ *                   No plugin-level i18n mechanism exists in the framework yet (see oauth-error.shtml
+ *                   file header) - all strings below are English-only for now.
+ * @file            plugins/auth-oauth/webapp/view/jpulse-plugins/auth-oauth.shtml
+ * @version         1.0.0
+ * @release         2026-07-29
+ * @repository      https://github.com/jpulse-net/plugin-auth-oauth
+ * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
+ * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
+ * @license         BSL 1.1 -- see LICENSE file; for commercial use: team@jpulse.net
+ * @genai           80%, Cursor 3.12, Claude Sonnet 5
+-->
+<html {{appConfig.system.htmlAttrs}}>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connected Accounts - {{app.site.shortName}}</title>
+
+    {{file.include "jpulse-header.tmpl"}}
+    <style>
+        /* Page-specific auth-oauth styles only */
+        .local-auth-oauth-empty {
+            color: var(--jp-theme-text-muted, #666);
+            font-style: italic;
+        }
+
+        .local-auth-oauth-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--jp-theme-border, #e0e0e0);
+        }
+
+        .local-auth-oauth-row:last-child {
+            border-bottom: none;
+        }
+
+        .local-auth-oauth-row-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .local-auth-oauth-icon {
+            font-size: 1.6em;
+            width: 36px;
+            text-align: center;
+        }
+
+        .local-auth-oauth-label {
+            font-weight: 600;
+        }
+
+        .local-auth-oauth-meta {
+            font-size: 0.85em;
+            color: var(--jp-theme-text-muted, #666);
+        }
+    </style>
+</head>
+<body>
+    {{#component "pluginCards.authOauth" order=5}}
+        {{!-- Automatically included in the dashboard at jpulse-plugins/index.shtml --}}
+        <a href="/jpulse-plugins/auth-oauth.shtml" class="jp-card-dashboard jp-icon-btn">
+            <div class="jp-icon-container">🔗</div>
+            <h3 class="jp-card-title">Connected Accounts</h3>
+            <p class="jp-card-description">
+                Manage single sign-on providers linked to your account
+            </p>
+        </a>
+    {{/component}}
+
+    <main class="jp-main">
+        <div class="jp-container-1000">
+            <div class="jp-page-header">
+                <h1>🔗 Connected Accounts</h1>
+                <span class="jp-subtitle">Sign in with Google, Okta, or other identity providers</span>
+            </div>
+
+            <div id="localAuthOauthLoggedOut" class="jp-card" style="display:none;">
+                <p>Please <a href="/auth/login.shtml?redirect=%2Fjpulse-plugins%2Fauth-oauth.shtml">sign in</a>
+                    to manage your connected accounts.</p>
+            </div>
+
+            <div id="localAuthOauthContent" style="display:none;">
+                <div class="jp-card">
+                    <h2>Linked Providers</h2>
+                    <div id="localLinkedList"><p class="local-auth-oauth-empty">Loading…</p></div>
+                </div>
+
+                <div class="jp-card">
+                    <h2>Connect Another Provider</h2>
+                    <div id="localAvailableList"><p class="local-auth-oauth-empty">Loading…</p></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    {{file.include "jpulse-footer.tmpl"}}
+    <script>
+    (function () {
+        const escape = jPulse.string.escapeHtml;
+
+        function unlinkBlockedMessage(reason) {
+            if (reason === 'LAST_SIGNIN_METHOD') {
+                return 'This is your only sign-in method - set a local password first (in Account Settings) before disconnecting it.';
+            }
+            return 'This provider cannot be disconnected right now.';
+        }
+
+        function renderLinked(linked) {
+            const container = document.getElementById('localLinkedList');
+            if (!linked.length) {
+                container.innerHTML = '<p class="local-auth-oauth-empty">No providers connected yet.</p>';
+                return;
+            }
+            container.innerHTML = linked.map((p) => {
+                const meta = [];
+                if (p.email) { meta.push(escape(p.email)); }
+                if (p.lastLoginAt) { meta.push('Last used ' + jPulse.date.formatLocalDate(p.lastLoginAt)); }
+                const disabledAttrs = p.canUnlink ? '' : `disabled title="${escape(unlinkBlockedMessage(p.unlinkBlockedReason))}"`;
+                return `
+                    <div class="local-auth-oauth-row" data-provider-id="${escape(p.providerId)}">
+                        <div class="local-auth-oauth-row-info">
+                            <span class="local-auth-oauth-icon">${p.icon || '🔗'}</span>
+                            <div>
+                                <div class="local-auth-oauth-label">${escape(p.label)}</div>
+                                <div class="local-auth-oauth-meta">${meta.join(' • ')}</div>
+                            </div>
+                        </div>
+                        <button type="button" class="jp-btn jp-btn-danger local-auth-oauth-unlink-btn" ${disabledAttrs}>
+                            Disconnect
+                        </button>
+                    </div>
+                `;
+            }).join('');
+
+            container.querySelectorAll('.local-auth-oauth-unlink-btn').forEach((btn) => {
+                if (btn.disabled) { return; }
+                btn.addEventListener('click', () => {
+                    const providerId = btn.closest('.local-auth-oauth-row').dataset.providerId;
+                    onUnlinkClick(providerId, btn);
+                });
+            });
+        }
+
+        function renderAvailable(available) {
+            const container = document.getElementById('localAvailableList');
+            if (!available.length) {
+                container.innerHTML = '<p class="local-auth-oauth-empty">No additional providers are available to connect.</p>';
+                return;
+            }
+            container.innerHTML = available.map((p) => `
+                <div class="local-auth-oauth-row" data-provider-id="${escape(p.providerId)}">
+                    <div class="local-auth-oauth-row-info">
+                        <span class="local-auth-oauth-icon">${p.icon || '🔗'}</span>
+                        <div class="local-auth-oauth-label">${escape(p.label)}</div>
+                    </div>
+                    <button type="button" class="jp-btn jp-btn-primary local-auth-oauth-link-btn">
+                        Connect
+                    </button>
+                </div>
+            `).join('');
+
+            container.querySelectorAll('.local-auth-oauth-link-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const providerId = btn.closest('.local-auth-oauth-row').dataset.providerId;
+                    onLinkClick(providerId, btn);
+                });
+            });
+        }
+
+        async function onLinkClick(providerId, btn) {
+            btn.disabled = true;
+            const response = await jPulse.api.post('/api/1/auth-oauth/link/' + encodeURIComponent(providerId));
+            if (response.success && response.data?.redirectUrl) {
+                window.location.href = response.data.redirectUrl;
+                return;
+            }
+            btn.disabled = false;
+            jPulse.api.handleError(new Error(response.error || 'Unknown error'), 'start the connect flow');
+        }
+
+        async function onUnlinkClick(providerId, btn) {
+            const result = await jPulse.UI.confirmDialog({
+                title: 'Disconnect Provider',
+                message: 'Disconnect this provider? You will need to reconnect it to sign in with it again.',
+                buttons: ['Cancel', 'Disconnect']
+            });
+            if (result.button !== 'Disconnect') { return; }
+
+            btn.disabled = true;
+            const response = await jPulse.api.delete('/api/1/auth-oauth/link/' + encodeURIComponent(providerId));
+            if (response.success) {
+                jPulse.UI.toast.show('Provider disconnected.', 'success');
+                await loadProviders();
+                return;
+            }
+            btn.disabled = false;
+            jPulse.api.handleError(new Error(response.error || 'Unknown error'), 'disconnect the provider');
+        }
+
+        async function loadProviders() {
+            const response = await jPulse.api.get('/api/1/auth-oauth/user/providers');
+            if (!response.success) {
+                if (response.code === 'UNAUTHORIZED') {
+                    document.getElementById('localAuthOauthLoggedOut').style.display = '';
+                    document.getElementById('localAuthOauthContent').style.display = 'none';
+                } else {
+                    jPulse.api.handleError(new Error(response.error || 'Unknown error'), 'load connected accounts');
+                }
+                return;
+            }
+            document.getElementById('localAuthOauthLoggedOut').style.display = 'none';
+            document.getElementById('localAuthOauthContent').style.display = '';
+            renderLinked(response.data.linked);
+            renderAvailable(response.data.available);
+        }
+
+        jPulse.dom.ready(async () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('linked') === '1') {
+                jPulse.UI.toast.show('Account connected successfully.', 'success');
+                // Drop the query param so a page refresh doesn't re-show the toast
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+            await loadProviders();
+        });
+    })();
+    </script>
+</body>
+</html>

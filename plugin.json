@@ -1,0 +1,88 @@
+{
+    "name": "auth-oauth",
+    "npmPackage": "@jpulse-net/plugin-auth-oauth",
+    "version": "1.0.0",
+    "icon": "🔑",
+    "summary": "OAuth 2.0 / OpenID Connect single sign-on (Google, Okta...)",
+    "description": "<p>Adds OAuth 2.0 / OpenID Connect (OIDC) based single sign-on to jPulse Framework. Supports public sites (Google) and org-internal sites (Okta, Auth0, Azure Entra, Keycloak, ADFS via generic OIDC discovery), plus manual OAuth2 for non-OIDC providers.</p><ul><li><strong>Authorization Code Flow with PKCE:</strong> mandatory PKCE (S256), state, and OIDC nonce on every provider</li><li><strong>Flexible User Linking:</strong> sub-only, link-by-email, or just-in-time account creation, per provider</li><li><strong>Composes with MFA:</strong> auth-mfa's TOTP step runs after successful SSO identity resolution</li></ul>",
+    "author": "jPulse Team <team@jpulse.net>",
+    "jpulseVersion": ">=1.7.1",
+    "autoEnable": false,
+    "dependencies": {
+        "npm": {
+            "openid-client": "^6.8.4"
+        },
+        "plugins": {}
+    },
+    "config": {
+        "schema": [
+            {
+                "type": "help",
+                "content": "<strong>OAuth / OIDC SSO</strong> — Configure identity providers below. See <a href=\"/jpulse-docs/installed-plugins/auth-oauth/README\">docs</a> for provider setup guides (Google, Okta, Keycloak, Azure Entra).",
+                "tab": "General"
+            },
+            {
+                "id": "defaultLinkingStrategy",
+                "label": "Default Linking Strategy",
+                "type": "select",
+                "default": "link-by-email",
+                "options": [
+                    { "value": "sub-only", "label": "Sub only — strict, admin must pre-provision" },
+                    { "value": "link-by-email", "label": "Link by verified email — recommended" },
+                    { "value": "jit-create", "label": "JIT create — for public sites" }
+                ],
+                "help": "Fallback linking strategy for providers that don't override this",
+                "tab": "General"
+            },
+            {
+                "id": "jitDefaultRoles",
+                "label": "JIT: Default Roles",
+                "type": "multiselect",
+                "default": ["user"],
+                "options": [
+                    { "value": "user", "label": "Users" }
+                ],
+                "help": "Roles assigned to users created via Just-In-Time provisioning. Administrators are never auto-provisioned — admin/root must always be granted manually by an existing admin, regardless of this setting.",
+                "tab": "General"
+            },
+            {
+                "id": "jitDefaultStatus",
+                "label": "JIT: Default Status",
+                "type": "select",
+                "default": "active",
+                "options": [
+                    { "value": "active", "label": "Active — immediate login" },
+                    { "value": "pending", "label": "Pending approval — admin must approve" }
+                ],
+                "tab": "General"
+            },
+            {
+                "id": "profileRequiredFields",
+                "label": "JIT: Required Profile Fields",
+                "type": "multiselect",
+                "default": ["firstName", "lastName"],
+                "options": [
+                    { "value": "firstName", "label": "First name" },
+                    { "value": "lastName",  "label": "Last name" },
+                    { "value": "nickName",  "label": "Nickname" }
+                ],
+                "help": "For JIT-created users only. If the IdP doesn't provide these claims, the user is prompted to fill them in at first login. Existing users are never re-prompted.",
+                "tab": "General"
+            },
+            {
+                "id": "providers",
+                "label": "Identity Providers",
+                "type": "custom",
+                "renderer": "authOauth.renderProviders",
+                "default": [],
+                "help": "OAuth 2.0 / OIDC identity providers users can sign in with",
+                "tab": "Providers"
+            },
+            {
+                "type": "help",
+                "content": "<strong>Break-Glass:</strong> If you set configuration <code>controller.auth.localAuthRestriction: 'admins-only'</code> in <code>site/webapp/app.conf</code>, non-admin users must use SSO. Local admins can still sign in with username/password (recovery via <code>/auth/login.shtml?localFallback=1</code>).",
+                "tab": "Security"
+            }
+        ]
+    }
+}
