@@ -6,7 +6,7 @@
  *                   a dot (GitHub-style), and no usable name claims at all (schema-valid
  *                   placeholder + placeholderFields tracking).
  * @file            plugins/auth-oauth/webapp/tests/unit/utils/profile-extractor.test.js
- * @version         1.0.0
+ * @version         1.0.1
  * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/

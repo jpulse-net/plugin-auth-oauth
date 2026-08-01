@@ -40,7 +40,7 @@
  *                   login-page cache; the create/update/delete endpoints remain available as a
  *                   standalone API surface but the admin UI no longer drives them.
  * @file            plugins/auth-oauth/webapp/controller/oauthAuth.js
- * @version         1.0.0
+ * @version         1.0.1
  * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/

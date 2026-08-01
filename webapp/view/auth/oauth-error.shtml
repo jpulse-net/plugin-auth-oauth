@@ -12,7 +12,7 @@
  *                   strings, plugins have no equivalent). Messages below are English-only for
  *                   now; revisit once plugin i18n loading exists.
  * @file            plugins/auth-oauth/webapp/view/auth/oauth-error.shtml
- * @version         1.0.0
+ * @version         1.0.1
  * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/

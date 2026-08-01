@@ -7,7 +7,7 @@
  *                   (build authorization URL, exchange code for tokens, verify ID token claims,
  *                   optionally fetch userinfo). See W-197 design doc §2-3.
  * @file            plugins/auth-oauth/webapp/utils/oauthClient.js
- * @version         1.0.0
+ * @version         1.0.1
  * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/

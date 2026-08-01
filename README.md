@@ -1,4 +1,4 @@
-# jPulse Framework / Plugins / Auth-OAuth / README v1.0.0
+# jPulse Framework / Plugins / Auth-OAuth / README v1.0.1
 
 OAuth 2.0 / OpenID Connect (OIDC) single sign-on plugin for jPulse Framework. Supports public sites
 (Google) and org-internal sites (Microsoft Entra ID, Okta, Auth0, Keycloak, ADFS via generic OIDC
@@ -147,6 +147,11 @@ This plugin extends the user schema with:
   Microsoft Entra ID verified for `sub-only` linking only - see `docs/README.md`'s Microsoft Entra
   ID section for a known `email_verified` limitation affecting `link-by-email`/`jit-create` on that
   preset.
+- **Version 1.0.1 - Bugfix**: Fixes the linked-accounts page (`/jpulse-plugins/auth-oauth.shtml`)
+  being unreachable from the UI since v1.0.0 - `webapp/view/jpulse-navigation.js` (present in every
+  other jPulse plugin, appends a page link to the user menu's "jPulse Plugins" section) was never
+  added, so nothing anywhere in the framework's navigation linked to it. Adds a "Connected Accounts"
+  entry, matching the `auth-mfa`/`hello-world` pattern - no other behavior changes.
 
 ## License
 

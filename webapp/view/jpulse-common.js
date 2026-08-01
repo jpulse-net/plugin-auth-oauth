@@ -18,7 +18,7 @@
  *                    against, so it stays a dedicated admin-endpoint call and is disabled for a
  *                    provider that only exists locally (added this session, not yet saved).
  * @file            plugins/auth-oauth/webapp/view/jpulse-common.js
- * @version         1.0.0
+ * @version         1.0.1
  * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/

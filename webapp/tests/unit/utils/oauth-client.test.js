@@ -7,7 +7,7 @@
  *                   grant / userinfo delegation - all against a fully mocked `openid-client`
  *                   module (per the W-197 design decision to test mocked-only this session)
  * @file            plugins/auth-oauth/webapp/tests/unit/utils/oauth-client.test.js
- * @version         1.0.0
+ * @version         1.0.1
  * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/

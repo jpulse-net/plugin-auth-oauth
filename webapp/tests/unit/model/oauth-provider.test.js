@@ -5,7 +5,7 @@
  *                   encryption round-trip through a mocked authOauth_providers collection, and
  *                   getProviderWithSecret() merging preset defaults + decrypted secret
  * @file            plugins/auth-oauth/webapp/tests/unit/model/oauth-provider.test.js
- * @version         1.0.0
+ * @version         1.0.1
  * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
