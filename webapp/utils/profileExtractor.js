@@ -12,7 +12,7 @@
  *                   never empty by construction.
  * @file            plugins/auth-oauth/webapp/utils/profileExtractor.js
  * @version         1.0.0
- * @release         2026-07-29
+ * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/

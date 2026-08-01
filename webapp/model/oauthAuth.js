@@ -9,7 +9,7 @@
  *                   Components") rather than trying to model each provider as a W-107 field.
  * @file            plugins/auth-oauth/webapp/model/oauthAuth.js
  * @version         1.0.0
- * @release         2026-07-29
+ * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -41,7 +41,7 @@ class OauthAuthModel {
                     adminCard: {
                         visible: true,
                         label: 'SSO Providers',
-                        icon: '🔗',
+                        icon: '🔑',
                         description: 'Linked single sign-on identity providers for this user',
                         order: 90,
                         actions: [
@@ -56,7 +56,7 @@ class OauthAuthModel {
                     userCard: {
                         visible: true,
                         label: 'Connected Accounts',
-                        icon: '🔗',
+                        icon: '🔑',
                         description: 'Sign in with Google, Okta, or other identity providers',
                         order: 20,
                         actions: [

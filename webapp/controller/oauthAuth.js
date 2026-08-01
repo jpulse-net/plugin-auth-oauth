@@ -20,16 +20,28 @@
  *                   apiInit and apiLink from the same callback route; within 'login' mode,
  *                   _resolveUser()'s three linking strategies (`sub-only`, `link-by-email`,
  *                   `jit-create`) are all implemented - see that method's doc comment.
- *                   apiAdminProviders* (list/create/update/delete/test) back the W-194 custom
- *                   renderer (webapp/view/jpulse-common.js authOauth.renderProviders) - each
+ *                   apiAdminProviders* (list/create/update/delete/test) is a standalone REST CRUD
+ *                   surface over the same `providers` config array the custom renderer
+ *                   (webapp/view/jpulse-common.js authOauth.renderProviders) edits in-memory - each
  *                   write reads the plugin's full config via PluginModel, splices the `providers`
- *                   array, and writes it back via PluginModel.upsert() (design doc §8), encrypting
- *                   any submitted plaintext `clientSecret` via OauthProviderModel.setClientSecret()
- *                   before it ever reaches config storage, and invalidating the §13 login-page
- *                   cache on every write.
+ *                   array, and writes it back via PluginModel.upsert() (design doc §8). The admin
+ *                   UI itself no longer calls create/update/delete through these endpoints (W-200):
+ *                   every field write, Add, and Delete happens locally in the renderer's in-memory
+ *                   array (no per-row commit step at all), and the plugin config page's single
+ *                   generic Save button runs onPluginConfigBeforeSave below to validate, sanitize,
+ *                   and encrypt any submitted plaintext `clientSecret` via
+ *                   OauthProviderModel.setClientSecret() right before persistence, cleaning up the
+ *                   encrypted secret for any provider that was deleted locally in the same save -
+ *                   both this hook and the dedicated create/update endpoints share
+ *                   _prepareProviderEntry()/_validateProviderInput() so there's exactly one place
+ *                   secrets get encrypted. Only Test still goes straight through its dedicated
+ *                   endpoint (immediate, not deferred to the page Save button, and only enabled in
+ *                   the UI for a provider that's actually been saved) and invalidates the §13
+ *                   login-page cache; the create/update/delete endpoints remain available as a
+ *                   standalone API surface but the admin UI no longer drives them.
  * @file            plugins/auth-oauth/webapp/controller/oauthAuth.js
  * @version         1.0.0
- * @release         2026-07-29
+ * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -40,15 +52,19 @@
 import crypto from 'crypto';
 import UserModel from '../../../../webapp/model/user.js';
 import PluginModel from '../../../../webapp/model/plugin.js';
+import ConfigModel from '../../../../webapp/model/config.js';
 import AuthController from '../../../../webapp/controller/auth.js';
 import OauthProviderModel from '../model/oauthProvider.js';
 import OauthAuthModel from '../model/oauthAuth.js';
 import * as oauthClient from '../utils/oauthClient.js';
 import { extractProfile } from '../utils/profileExtractor.js';
-import { isValidPreset } from '../utils/providerRegistry.js';
+import { getPreset, isValidPreset } from '../utils/providerRegistry.js';
 
 const PROVIDER_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 const BUTTON_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+// Plain domain, no scheme/path/port/wildcard - e.g. 'corp.example.com'. Requires at least one dot
+// and an alphabetic TLD; deliberately doesn't accept '@', '*', or whitespace anywhere.
+const ALLOWED_DOMAIN_PATTERN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 
 // Small, deliberately conservative SVG allow-list for the `icon` field (single-color line/shape
 // icons only - see W-197 design doc "button color" discussion). Tag/attribute names must be
@@ -100,13 +116,70 @@ function mapUserinfoToClaims(userinfo, mapping) {
 }
 
 /**
- * Strip `admin`/`root` from JIT default roles (design doc §8 "Defense in depth" - the UI only
- * offering `user` in the dropdown is a UX nicety, not the actual security boundary; this is).
+ * Strip whatever this site currently treats as an admin-equivalent role from JIT default/override
+ * roles (design doc §8 "Defense in depth" - the UI only offering non-admin roles in the dropdown is
+ * a UX nicety, not the actual security boundary; this is). W-147 lets a site define custom roles
+ * and add any of them to `data.general.adminRoles`, so the admin-role set is not always literally
+ * `['admin', 'root']` - hardcoding those two names here would let a site-defined admin-equivalent
+ * role slip through and be auto-assigned to a JIT-provisioned user.
  */
 function sanitizeJitRoles(roles) {
+    const adminRoles = ConfigModel.getEffectiveAdminRoles();
     const list = Array.isArray(roles) && roles.length > 0 ? roles : ['user'];
-    const filtered = list.filter(r => r !== 'admin' && r !== 'root');
+    const filtered = list.filter(r => !adminRoles.includes(r));
     return filtered.length > 0 ? filtered : ['user'];
+}
+
+/** Lowercase-normalize + dedupe a validated `allowedDomains` list before it's persisted. */
+function sanitizeAllowedDomains(domains) {
+    if (!Array.isArray(domains)) {
+        return domains;
+    }
+    return [...new Set(domains.map(d => d.trim().toLowerCase()))];
+}
+
+/**
+ * W-198: `UserModel.findByEmail()`/`create()`/`updateById()` all normalize email to
+ * trim+lowercase before reading/writing/comparing - this plugin queries `UserModel.find()`
+ * directly (not `findByEmail()`, since it needs the array/`limit` shape for ambiguous-match
+ * detection), so it must apply the identical normalization itself before every such query, or an
+ * IdP-returned non-lowercase email could fail to match an existing normalized account.
+ */
+function normalizeEmail(email) {
+    return (typeof email === 'string' ? email : '').trim().toLowerCase();
+}
+
+/** Domain portion of an email address, lowercased - null if `email` isn't a plain 'x@y' string. */
+function extractEmailDomain(email) {
+    if (typeof email !== 'string') {
+        return null;
+    }
+    const at = email.lastIndexOf('@');
+    if (at < 0 || at === email.length - 1) {
+        return null;
+    }
+    return email.slice(at + 1).toLowerCase();
+}
+
+/**
+ * Design doc §8: "Only allow login for emails in these domains" - an optional per-provider
+ * allowlist, exact-match (no subdomain/wildcard matching) against the current login's `identity
+ * .email`, not the strategy used to resolve the user. Empty/unset `allowedDomains` allows any
+ * domain (opt-in restriction). No `identity.email` (e.g. a `sub-only` provider that never
+ * requests the `email` scope) can't be checked against a domain list, so it's allowed through -
+ * the admin has nothing to restrict on in that case.
+ * @returns {boolean}
+ */
+function isDomainAllowed(providerWithSecret, identity) {
+    const allowedDomains = providerWithSecret?.allowedDomains;
+    if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) {
+        return true;
+    }
+    const domain = extractEmailDomain(identity?.email);
+    if (!domain) {
+        return true;
+    }
+    return allowedDomains.includes(domain);
 }
 
 /**
@@ -134,7 +207,10 @@ class OauthAuthController {
         // W-109: inject/validate the oauth-profile-complete step for jit-create users whose IdP
         // didn't provide all required profile fields (design doc §10 Stage B).
         onAuthGetSteps: { priority: 20 },
-        onAuthValidateStep: { priority: 100 }
+        onAuthValidateStep: { priority: 100 },
+        // W-200: lets the provider table (a `type: "custom"` field) participate in the plugin
+        // config page's single generic Save button instead of needing its own separate one.
+        onPluginConfigBeforeSave: { priority: 100 }
     };
 
     static routes = [
@@ -148,10 +224,14 @@ class OauthAuthController {
         // this is a read-only helper for the oauth-profile-complete.shtml Stage B form, not itself
         // part of the multi-step contract (submission goes through the shared POST /api/1/auth/login).
         { method: 'GET', path: '/api/1/auth-oauth/profile-draft', handler: 'apiProfileDraft', auth: 'none' },
-        // Back the W-194 custom renderer's provider table (§13's admin/plugin-config.shtml Save
-        // button also persists `providers` as part of the whole-form save, but these dedicated
-        // endpoints are what actually encrypt a submitted clientSecret and run "Test Connection").
+        // Standalone REST CRUD over `providers` (§13). The admin UI itself no longer calls
+        // create/update/delete here (W-200) - Add/Edit/Delete are all local array edits that rely
+        // on the plugin config page's single generic Save button, backed by
+        // onPluginConfigBeforeSave below. Only "Test Connection" remains an immediate, dedicated
+        // call from the UI (it needs a real, already-encrypted secret to test against, so it's
+        // disabled in the UI for a provider that hasn't been saved yet).
         { method: 'GET', path: '/api/1/auth-oauth/admin/providers', handler: 'apiAdminProviders', auth: 'admin' },
+        { method: 'GET', path: '/api/1/auth-oauth/admin/assignable-roles', handler: 'apiAdminAssignableRoles', auth: 'admin' },
         { method: 'POST', path: '/api/1/auth-oauth/admin/providers', handler: 'apiAdminProvidersCreate', auth: 'admin' },
         { method: 'PUT', path: '/api/1/auth-oauth/admin/providers/:id', handler: 'apiAdminProvidersUpdate', auth: 'admin' },
         { method: 'DELETE', path: '/api/1/auth-oauth/admin/providers/:id', handler: 'apiAdminProvidersDelete', auth: 'admin' },
@@ -171,17 +251,30 @@ class OauthAuthController {
         return res.redirect(`/auth/oauth-error.shtml?reason=${encodeURIComponent(reason)}`);
     }
 
+    /**
+     * Resolve a provider's presentation fields, falling back to its preset's own defaults when the
+     * admin left them blank - the config UI shows those same defaults as placeholders, so a blank
+     * field has to mean "inherit", not "render a button with no label or icon". Single source of
+     * truth for every surface that shows a provider (login buttons, connected-accounts page).
+     */
+    static _presentation(providerConfig, fallbackLabel) {
+        const preset = getPreset(providerConfig?.preset) || {};
+        return {
+            label: providerConfig?.label || preset.label || fallbackLabel,
+            icon: providerConfig?.icon || preset.icon || '🔑',
+            buttonColor: providerConfig?.buttonColor || preset.buttonColor
+        };
+    }
+
     /** Map raw provider config entries to the small public shape used for login page buttons. */
     static _buildProviderButtons(providers) {
         return providers
             .filter(p => p.enabled)
             .map(p => ({
                 id: p.id,
-                label: p.label,
-                icon: p.icon,
-                buttonColor: p.buttonColor,
+                ...OauthAuthController._presentation(p, p.id),
                 initUrl: `/api/1/auth-oauth/init/${encodeURIComponent(p.id)}`,
-                order: p.order || 100
+                order: p.order != null ? p.order : 100
             }))
             .sort((a, b) => a.order - b.order);
     }
@@ -235,10 +328,11 @@ class OauthAuthController {
             const linked = OauthAuthModel.listLinkedProviders(user).map(link => {
                 const meta = allProviders.find(p => p.id === link.providerId) || {};
                 const unlinkCheck = OauthAuthModel.canUnlinkProvider(user, link.providerId);
+                const { label, icon } = OauthAuthController._presentation(meta, link.providerId);
                 return {
                     providerId: link.providerId,
-                    label: meta.label || link.providerId,
-                    icon: meta.icon || '🔗',
+                    label,
+                    icon,
                     email: link.email || null,
                     linkedAt: link.linkedAt || null,
                     lastLoginAt: link.lastLoginAt || null,
@@ -248,12 +342,15 @@ class OauthAuthController {
             });
             const available = allProviders
                 .filter(p => p.enabled && !user.oauth?.[p.id])
-                .map(p => ({
-                    providerId: p.id,
-                    label: p.label,
-                    icon: p.icon,
-                    linkUrl: `/api/1/auth-oauth/link/${encodeURIComponent(p.id)}`
-                }));
+                .map(p => {
+                    const { label, icon } = OauthAuthController._presentation(p, p.id);
+                    return {
+                        providerId: p.id,
+                        label,
+                        icon,
+                        linkUrl: `/api/1/auth-oauth/link/${encodeURIComponent(p.id)}`
+                    };
+                });
 
             global.LogController.logInfo(req, 'oauthAuth.apiUserProviders',
                 `success: ${linked.length} linked, ${available.length} available for user ${user.username}`);
@@ -348,8 +445,79 @@ class OauthAuthController {
     }
 
     /**
-     * Shared validation for apiAdminProvidersCreate/apiAdminProvidersUpdate: `id` format,
-     * `preset` recognized, `buttonColor` format, `label` plain-text. Uniqueness (create) is
+     * GET /api/1/auth-oauth/admin/assignable-roles
+     * This site's roles (W-147) with its admin-equivalent roles already removed - the exact set
+     * `sanitizeJitRoles()` would ever let a JIT-created user keep. Backs the "JIT: Default Roles"
+     * / "JIT: Override Roles" selectors: an admin-equivalent role would be silently stripped at
+     * JIT-creation time regardless of what's picked here, so it's left off the list entirely
+     * rather than shown and then quietly ignored - a role that's excluded is easier to reason
+     * about than one that appears selectable but does nothing.
+     */
+    static async apiAdminAssignableRoles(req, res) {
+        global.LogController.logRequest(req, 'oauthAuth.apiAdminAssignableRoles', '');
+        try {
+            const adminRoles = ConfigModel.getEffectiveAdminRoles();
+            const roles = ConfigModel.getEffectiveRoles().filter(role => !adminRoles.includes(role));
+            global.LogController.logInfo(req, 'oauthAuth.apiAdminAssignableRoles', `success: ${roles.length} role(s)`);
+            return res.json({ success: true, data: { roles } });
+        } catch (error) {
+            global.LogController.logError(req, 'oauthAuth.apiAdminAssignableRoles', `error: ${error.message}`);
+            return global.CommonUtils.sendError(req, res, 500, 'Failed to list assignable roles', 'INTERNAL_ERROR');
+        }
+    }
+
+    /**
+     * `onPluginConfigBeforeSave` hook: transforms the `providers` field of a generic plugin-config
+     * save (the page's single "Save Changes" button - General/Providers/Security tabs together)
+     * the same way the dedicated admin endpoints do, so the custom renderer's add/edit form no
+     * longer needs its own separate Save button (design doc, formerly a documented "known gotcha").
+     * The renderer now only ever mutates its in-memory `providers` array locally; this hook is
+     * what actually validates, sanitizes, and encrypts secrets right before `PluginModel.upsert()`.
+     * Throwing here aborts the whole save with a 400 (`CONFIG_SAVE_REJECTED`) - the only hook in
+     * the framework where "cancel" means throw rather than returning false.
+     * @param {{ req: object, pluginName: string, configData: object, oldConfig: object }} context
+     */
+    static async onPluginConfigBeforeSave(context) {
+        const { configData, oldConfig } = context;
+        if (!configData || !Array.isArray(configData.providers)) {
+            return; // General/Security-only save - nothing to transform
+        }
+
+        const oldProviders = Array.isArray(oldConfig?.config?.providers) ? oldConfig.config.providers : [];
+        const seenIds = new Set();
+        const prepared = [];
+
+        for (const [position, raw] of configData.providers.entries()) {
+            const validationError = OauthAuthController._validateProviderInput(raw, { requireId: true });
+            if (validationError) {
+                // Name the offending row by id when it has one, by position when it doesn't - a
+                // half-filled row left behind in the table would otherwise be an anonymous blocker.
+                const which = raw?.id ? `Provider '${raw.id}'` : `Provider in row ${position + 1}`;
+                throw new Error(`${which}: ${validationError}`);
+            }
+            if (seenIds.has(raw.id)) {
+                throw new Error(`Duplicate provider id: '${raw.id}'`);
+            }
+            seenIds.add(raw.id);
+
+            const existing = oldProviders.find(p => p.id === raw.id) || null;
+            prepared.push(await OauthAuthController._prepareProviderEntry(raw, existing));
+        }
+
+        // Clean up an encrypted secret for any provider removed from the list in this save.
+        for (const old of oldProviders) {
+            if (old.clientSecretRef && !seenIds.has(old.id)) {
+                await OauthProviderModel.deleteClientSecret(old.id);
+            }
+        }
+
+        configData.providers = prepared;
+        await OauthProviderModel.invalidateCachedProviders();
+    }
+
+    /**
+     * Shared validation for apiAdminProvidersCreate/apiAdminProvidersUpdate/onPluginConfigBeforeSave:
+     * `id` format, `preset` recognized, `buttonColor` format, `label` plain-text. Uniqueness is
      * checked by the caller against the current list. `icon` is not validated here - it's
      * sanitized (not rejected) at the call site via sanitizeIcon(), since "is this valid SVG"
      * isn't a simple format check the way the other fields are.
@@ -373,7 +541,45 @@ class OauthAuthController {
         if (body?.label !== undefined && /[<>]/.test(body.label)) {
             return 'Label may not contain "<" or ">"';
         }
+        if (body?.allowedDomains !== undefined) {
+            if (!Array.isArray(body.allowedDomains)) {
+                return 'Allowed domains must be a list';
+            }
+            for (const domain of body.allowedDomains) {
+                if (typeof domain !== 'string' || !ALLOWED_DOMAIN_PATTERN.test(domain.trim())) {
+                    return `Invalid domain in allowed domains list: '${domain}'`;
+                }
+            }
+        }
         return null;
+    }
+
+    /**
+     * Shared provider-entry preparation for create/update (both the dedicated admin endpoints
+     * below and the generic-save `onPluginConfigBeforeSave` hook): sanitizes `icon`/`allowedDomains`
+     * and resolves the encrypted secret. `clientSecretRef` is always stripped from `raw` and
+     * re-derived server-side - never trust a client-submitted value for it (it's an internal
+     * reference, not a user-editable field) - either freshly encrypted from a submitted plaintext
+     * `clientSecret`, or carried forward from `existing` when the secret field was left blank.
+     * @param {object} raw - Submitted provider fields (id, preset, ..., optional `clientSecret`)
+     * @param {object|null} existing - The provider's current stored entry, if any
+     * @returns {Promise<object>} Entry ready to persist - never contains a plaintext secret
+     */
+    static async _prepareProviderEntry(raw, existing) {
+        const { clientSecret, clientSecretRef, ...entry } = raw;
+        void clientSecretRef; // never trust the client for this - always re-derived below
+        if (entry.icon !== undefined) {
+            entry.icon = sanitizeIcon(entry.icon);
+        }
+        if (entry.allowedDomains !== undefined) {
+            entry.allowedDomains = sanitizeAllowedDomains(entry.allowedDomains);
+        }
+        if (clientSecret) {
+            entry.clientSecretRef = await OauthProviderModel.setClientSecret(entry.id, clientSecret);
+        } else if (existing?.clientSecretRef) {
+            entry.clientSecretRef = existing.clientSecretRef;
+        }
+        return entry;
     }
 
     /**
@@ -416,13 +622,7 @@ class OauthAuthController {
                 return global.CommonUtils.sendError(req, res, 400, `Provider id '${body.id}' already exists`, 'VALIDATION_ERROR');
             }
 
-            const { clientSecret, ...entry } = body;
-            if (entry.icon !== undefined) {
-                entry.icon = sanitizeIcon(entry.icon);
-            }
-            if (clientSecret) {
-                entry.clientSecretRef = await OauthProviderModel.setClientSecret(body.id, clientSecret);
-            }
+            const entry = await OauthAuthController._prepareProviderEntry(body, null);
 
             await OauthAuthController._saveProviders(req, providers => [...providers, entry]);
             global.LogController.logInfo(req, 'oauthAuth.apiAdminProvidersCreate', `success: created provider ${body.id}`);
@@ -456,14 +656,8 @@ class OauthAuthController {
                 return global.CommonUtils.sendError(req, res, 404, `Provider '${providerId}' not found`, 'NOT_FOUND');
             }
 
-            const { clientSecret, ...fields } = body;
-            if (fields.icon !== undefined) {
-                fields.icon = sanitizeIcon(fields.icon);
-            }
-            const updatedEntry = { ...existing, ...fields, id: providerId };
-            if (clientSecret) {
-                updatedEntry.clientSecretRef = await OauthProviderModel.setClientSecret(providerId, clientSecret);
-            }
+            const updatedEntry = await OauthAuthController._prepareProviderEntry(
+                { ...existing, ...body, id: providerId }, existing);
 
             await OauthAuthController._saveProviders(req,
                 providers => providers.map(p => (p.id === providerId ? updatedEntry : p)));
@@ -696,19 +890,28 @@ class OauthAuthController {
         const user = resolution.user;
         // No implicit framework-side gate on user.status inside completeExternalAuth() (W-195) -
         // the plugin's own callback handler must check it explicitly, before calling it (design
-        // doc §7 "Interaction with status: 'pending'"). Mirrors the existing locked/disabled
-        // convention used elsewhere in auth.js.
-        if (user.status === 'locked') {
-            global.LogController.logError(req, 'oauthAuth.apiCallback', `error: account locked for user ${user.username}`);
-            return OauthAuthController.redirectToError(req, res, 'ACCOUNT_LOCKED');
-        }
-        if (user.status === 'disabled') {
-            global.LogController.logError(req, 'oauthAuth.apiCallback', `error: account disabled for user ${user.username}`);
-            return OauthAuthController.redirectToError(req, res, 'ACCOUNT_DISABLED');
-        }
+        // doc §7 "Interaction with status: 'pending'"). Checked against UserModel's actual status
+        // enum (webapp/model/user.js: 'pending' | 'active' | 'inactive' | 'suspended' |
+        // 'terminated') - NOT the 'locked'/'disabled' values used elsewhere in auth.js, which don't
+        // exist in that enum and are themselves dead code there (UserModel.authenticate() already
+        // gates local login on `status !== 'active'` one layer down - this plugin has no equivalent
+        // lower-layer gate, since OAuth login calls completeExternalAuth() directly and never goes
+        // through auth.js's login()/UserModel.authenticate() at all, so this check is the only gate).
         if (user.status === 'pending') {
             global.LogController.logError(req, 'oauthAuth.apiCallback', `error: account pending approval for user ${user.username}`);
             return OauthAuthController.redirectToError(req, res, 'ACCOUNT_PENDING_APPROVAL');
+        }
+        if (user.status === 'suspended') {
+            global.LogController.logError(req, 'oauthAuth.apiCallback', `error: account suspended for user ${user.username}`);
+            return OauthAuthController.redirectToError(req, res, 'ACCOUNT_SUSPENDED');
+        }
+        if (user.status === 'terminated') {
+            global.LogController.logError(req, 'oauthAuth.apiCallback', `error: account terminated for user ${user.username}`);
+            return OauthAuthController.redirectToError(req, res, 'ACCOUNT_TERMINATED');
+        }
+        if (user.status === 'inactive') {
+            global.LogController.logError(req, 'oauthAuth.apiCallback', `error: account inactive for user ${user.username}`);
+            return OauthAuthController.redirectToError(req, res, 'ACCOUNT_INACTIVE');
         }
 
         // JIT-created users already have their oauth.{provider} block set at creation time
@@ -797,10 +1000,23 @@ class OauthAuthController {
      * §7): `sub-only` (existing users only, matched by provider sub), `link-by-email` (existing
      * users only, matched by verified email), or `jit-create` (matches by verified email like
      * link-by-email, but creates a new user via _createJitUser() instead of failing closed when
-     * there's no existing user to link).
+     * there's no existing user to link). The provider's optional `allowedDomains` allowlist (§8)
+     * is checked first, ahead of every strategy branch - including an existing sub-matched user -
+     * so tightening it later acts as an immediate kill switch rather than only gating new signups.
+     *
+     * W-198: the matched local account's `emailVerified` is checked before ever linking via the
+     * email-match branch below - a **missing** field is treated as grandfathered/verified (matches
+     * `UserModel`'s own convention for pre-W-198 accounts), only an **explicit** `false` fails
+     * closed with `LOCAL_EMAIL_NOT_VERIFIED`. Without this, an attacker who signs up locally using
+     * the victim's real email (no ownership check exists at signup) would have the victim's first
+     * SSO login silently link to the attacker's account - see docs/dev/work-items.md W-198.
      * @returns {Promise<{ user: object, isNewLink: boolean }|{ error: string }>}
      */
     static async _resolveUser(providerId, providerWithSecret, identity) {
+        if (!isDomainAllowed(providerWithSecret, identity)) {
+            return { error: 'DOMAIN_NOT_ALLOWED' };
+        }
+
         const subMatches = await UserModel.find({ [`oauth.${providerId}.sub`]: identity.sub }, { limit: 1 });
         if (subMatches.length > 0) {
             return { user: subMatches[0], isNewLink: false };
@@ -816,11 +1032,14 @@ class OauthAuthController {
             if (!identity.emailVerified) {
                 return { error: 'EMAIL_NOT_VERIFIED_AT_PROVIDER' };
             }
-            const emailMatches = await UserModel.find({ email: identity.email }, { limit: 2 });
+            const emailMatches = await UserModel.find({ email: normalizeEmail(identity.email) }, { limit: 2 });
             if (emailMatches.length > 1) {
                 return { error: 'AMBIGUOUS_EMAIL_MATCH' };
             }
             if (emailMatches.length === 1) {
+                if (emailMatches[0].emailVerified === false) {
+                    return { error: 'LOCAL_EMAIL_NOT_VERIFIED' };
+                }
                 return { user: emailMatches[0], isNewLink: true };
             }
             // No existing user by sub or email. link-by-email fails closed (existing users only,
@@ -841,6 +1060,12 @@ class OauthAuthController {
      * needed). If Stage A had to fall back to a placeholder for any `profileRequiredFields`
      * field, `onAuthGetSteps` below injects the `oauth-profile-complete` step (Stage B) into the
      * W-109 multi-step flow so the user confirms/fills it in before ever seeing it.
+     *
+     * W-198: explicitly stamps `emailVerified: true` - `_resolveUser()` already confirmed
+     * `identity.emailVerified === true` at the IdP before ever calling this, so the new local
+     * account genuinely has a verified email; without this override, `UserModel.applyDefaults()`
+     * would otherwise stamp every brand-new document `emailVerified: false` (correct for local
+     * signup, where nothing has verified the address yet, but wrong here).
      * @returns {Promise<{ user: object, isNewLink: true }>}
      */
     static async _createJitUser(providerId, providerWithSecret, identity, pluginDoc) {
@@ -854,6 +1079,7 @@ class OauthAuthController {
                 const newUser = await UserModel.create({
                     username,
                     email: identity.email,
+                    emailVerified: true,
                     // Never surfaced - nobody, including the plugin, retains the plaintext, so
                     // local login is impossible until the user explicitly sets a real password
                     // (design doc §7 - a blank/empty password is a known auth anti-pattern).
@@ -885,7 +1111,7 @@ class OauthAuthController {
                 if (/email address already registered/i.test(error.message) || /duplicate key/i.test(error.message)) {
                     // Two JIT-eligible logins for a brand-new email raced each other (design doc
                     // §9 edge case) - the loser retries as a lookup instead of surfacing a 500.
-                    const raced = await UserModel.find({ email: identity.email }, { limit: 1 });
+                    const raced = await UserModel.find({ email: normalizeEmail(identity.email) }, { limit: 1 });
                     if (raced.length > 0) {
                         return { user: raced[0], isNewLink: true };
                     }

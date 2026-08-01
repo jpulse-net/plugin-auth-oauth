@@ -3,10 +3,10 @@
     "npmPackage": "@jpulse-net/plugin-auth-oauth",
     "version": "1.0.0",
     "icon": "🔑",
-    "summary": "OAuth 2.0 / OpenID Connect single sign-on (Google, Okta...)",
-    "description": "<p>Adds OAuth 2.0 / OpenID Connect (OIDC) based single sign-on to jPulse Framework. Supports public sites (Google) and org-internal sites (Okta, Auth0, Azure Entra, Keycloak, ADFS via generic OIDC discovery), plus manual OAuth2 for non-OIDC providers.</p><ul><li><strong>Authorization Code Flow with PKCE:</strong> mandatory PKCE (S256), state, and OIDC nonce on every provider</li><li><strong>Flexible User Linking:</strong> sub-only, link-by-email, or just-in-time account creation, per provider</li><li><strong>Composes with MFA:</strong> auth-mfa's TOTP step runs after successful SSO identity resolution</li></ul>",
+    "summary": "OAuth 2.0 / OpenID Connect single sign-on (Google, Microsoft, Okta...)",
+    "description": "<p>Adds OAuth 2.0 / OpenID Connect (OIDC) based single sign-on to jPulse Framework. Supports public sites (Google) and org-internal sites (Microsoft Entra ID, Okta, Auth0, Keycloak, ADFS via generic OIDC discovery), plus manual OAuth2 for non-OIDC providers.</p><ul><li><strong>Authorization Code Flow with PKCE:</strong> mandatory PKCE (S256), state, and OIDC nonce on every provider</li><li><strong>Flexible User Linking:</strong> sub-only, link-by-email, or just-in-time account creation, per provider</li><li><strong>Composes with MFA:</strong> auth-mfa's TOTP step runs after successful SSO identity resolution</li></ul>",
     "author": "jPulse Team <team@jpulse.net>",
-    "jpulseVersion": ">=1.7.1",
+    "jpulseVersion": ">=1.7.6",
     "autoEnable": false,
     "dependencies": {
         "npm": {
@@ -18,7 +18,7 @@
         "schema": [
             {
                 "type": "help",
-                "content": "<strong>OAuth / OIDC SSO</strong> — Configure identity providers below. See <a href=\"/jpulse-docs/installed-plugins/auth-oauth/README\">docs</a> for provider setup guides (Google, Okta, Keycloak, Azure Entra).",
+                "content": "<strong>OAuth / OIDC SSO</strong> — Configure identity providers below. See <a href=\"/jpulse-docs/installed-plugins/auth-oauth/README\">docs</a> for provider setup guides (Google, Microsoft Entra ID, Okta, Keycloak).",
                 "tab": "General"
             },
             {
@@ -40,9 +40,10 @@
                 "type": "multiselect",
                 "default": ["user"],
                 "options": [
-                    { "value": "user", "label": "Users" }
+                    { "value": "user", "label": "user" }
                 ],
-                "help": "Roles assigned to users created via Just-In-Time provisioning. Administrators are never auto-provisioned — admin/root must always be granted manually by an existing admin, regardless of this setting.",
+                "loadOptions": "authOauth.loadRoleOptions",
+                "help": "Roles assigned to users created via Just-In-Time provisioning, chosen from this site's roles. This site's admin roles are never shown here and can never be auto-provisioned this way.",
                 "tab": "General"
             },
             {
@@ -63,8 +64,7 @@
                 "default": ["firstName", "lastName"],
                 "options": [
                     { "value": "firstName", "label": "First name" },
-                    { "value": "lastName",  "label": "Last name" },
-                    { "value": "nickName",  "label": "Nickname" }
+                    { "value": "lastName",  "label": "Last name" }
                 ],
                 "help": "For JIT-created users only. If the IdP doesn't provide these claims, the user is prompted to fill them in at first login. Existing users are never re-prompted.",
                 "tab": "General"

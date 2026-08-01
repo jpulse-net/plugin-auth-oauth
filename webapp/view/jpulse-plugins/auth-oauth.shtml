@@ -11,7 +11,7 @@
  *                   file header) - all strings below are English-only for now.
  * @file            plugins/auth-oauth/webapp/view/jpulse-plugins/auth-oauth.shtml
  * @version         1.0.0
- * @release         2026-07-29
+ * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -57,6 +57,14 @@
             text-align: center;
         }
 
+        /* An admin-supplied inline SVG icon carries its own width/height (a typical downloaded
+           logo says 100x100) - pin it to the emoji's visual size so it can't blow up the row. */
+        .local-auth-oauth-icon svg {
+            width: 24px;
+            height: 24px;
+            vertical-align: middle;
+        }
+
         .local-auth-oauth-label {
             font-weight: 600;
         }
@@ -71,7 +79,7 @@
     {{#component "pluginCards.authOauth" order=5}}
         {{!-- Automatically included in the dashboard at jpulse-plugins/index.shtml --}}
         <a href="/jpulse-plugins/auth-oauth.shtml" class="jp-card-dashboard jp-icon-btn">
-            <div class="jp-icon-container">🔗</div>
+            <div class="jp-icon-container">🔑</div>
             <h3 class="jp-card-title">Connected Accounts</h3>
             <p class="jp-card-description">
                 Manage single sign-on providers linked to your account
@@ -82,7 +90,7 @@
     <main class="jp-main">
         <div class="jp-container-1000">
             <div class="jp-page-header">
-                <h1>🔗 Connected Accounts</h1>
+                <h1>🔑 Connected Accounts</h1>
                 <span class="jp-subtitle">Sign in with Google, Okta, or other identity providers</span>
             </div>
 
@@ -131,7 +139,7 @@
                 return `
                     <div class="local-auth-oauth-row" data-provider-id="${escape(p.providerId)}">
                         <div class="local-auth-oauth-row-info">
-                            <span class="local-auth-oauth-icon">${p.icon || '🔗'}</span>
+                            <span class="local-auth-oauth-icon">${p.icon || '🔑'}</span>
                             <div>
                                 <div class="local-auth-oauth-label">${escape(p.label)}</div>
                                 <div class="local-auth-oauth-meta">${meta.join(' • ')}</div>
@@ -162,7 +170,7 @@
             container.innerHTML = available.map((p) => `
                 <div class="local-auth-oauth-row" data-provider-id="${escape(p.providerId)}">
                     <div class="local-auth-oauth-row-info">
-                        <span class="local-auth-oauth-icon">${p.icon || '🔗'}</span>
+                        <span class="local-auth-oauth-icon">${p.icon || '🔑'}</span>
                         <div class="local-auth-oauth-label">${escape(p.label)}</div>
                     </div>
                     <button type="button" class="jp-btn jp-btn-primary local-auth-oauth-link-btn">

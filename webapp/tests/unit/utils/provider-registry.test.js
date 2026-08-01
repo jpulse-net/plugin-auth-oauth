@@ -5,7 +5,7 @@
  *                   admin-configured provider overrides
  * @file            plugins/auth-oauth/webapp/tests/unit/utils/provider-registry.test.js
  * @version         1.0.0
- * @release         2026-07-29
+ * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -29,6 +29,19 @@ describe('providerRegistry', () => {
             });
         });
 
+        test('returns the microsoft preset with expected OIDC defaults and no baked-in discoveryUrl', () => {
+            const preset = getPreset('microsoft');
+            expect(preset).toMatchObject({
+                type: 'oidc',
+                label: 'Microsoft Entra ID',
+                scopes: ['openid', 'email', 'profile'],
+                requiresClientSecret: true
+            });
+            // Unlike google, Entra ID's discovery URL is tenant-specific - no single URL fits
+            // every org, so the admin supplies it (same as the generic 'oidc' preset).
+            expect(preset.discoveryUrl).toBeUndefined();
+        });
+
         test('returns the generic oidc preset with no baked-in discoveryUrl', () => {
             const preset = getPreset('oidc');
             expect(preset.type).toBe('oidc');
@@ -47,13 +60,28 @@ describe('providerRegistry', () => {
 
         test('isValidPreset reflects registry contents', () => {
             expect(isValidPreset('google')).toBe(true);
+            expect(isValidPreset('microsoft')).toBe(true);
             expect(isValidPreset('oidc')).toBe(true);
             expect(isValidPreset('oauth2')).toBe(true);
             expect(isValidPreset('saml')).toBe(false);
         });
 
-        test('registry exposes exactly the three v1.0.0 presets', () => {
-            expect(Object.keys(PROVIDER_PRESETS).sort()).toEqual(['google', 'oauth2', 'oidc']);
+        test('registry exposes exactly the four v1.0.0 presets', () => {
+            expect(Object.keys(PROVIDER_PRESETS).sort()).toEqual(['google', 'microsoft', 'oauth2', 'oidc']);
+        });
+
+        test('the google preset\'s default icon is the multi-color "G" mark, sized only via CSS', () => {
+            const preset = getPreset('google');
+            expect(preset.icon).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 48 48">/);
+            expect((preset.icon.match(/<path /g) || []).length).toBe(4);
+            expect(preset.icon).not.toMatch(/\s(width|height|x|y)=/); // no baked-in size/position
+        });
+
+        test('the microsoft preset\'s default icon is the four-square mark, sized only via CSS', () => {
+            const preset = getPreset('microsoft');
+            expect(preset.icon).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 48 48">/);
+            expect((preset.icon.match(/<path /g) || []).length).toBe(4);
+            expect(preset.icon).not.toMatch(/\s(width|height|x|y)=/); // no baked-in size/position
         });
     });
 
@@ -78,6 +106,18 @@ describe('providerRegistry', () => {
 
             expect(resolved.label).toBe('Sign in with Corp Google');
             expect(resolved.buttonColor).toBe('#123456');
+        });
+
+        test('microsoft preset merges with an admin-supplied tenant-specific discoveryUrl', () => {
+            const resolved = resolveProviderConfig({
+                id: 'entra-corp',
+                preset: 'microsoft',
+                discoveryUrl: 'https://login.microsoftonline.com/contoso.onmicrosoft.com/v2.0/.well-known/openid-configuration'
+            });
+
+            expect(resolved.type).toBe('oidc');
+            expect(resolved.discoveryUrl).toBe('https://login.microsoftonline.com/contoso.onmicrosoft.com/v2.0/.well-known/openid-configuration');
+            expect(resolved.scopes).toEqual(['openid', 'email', 'profile']);
         });
 
         test('a non-empty stored scopes list overrides the preset default', () => {

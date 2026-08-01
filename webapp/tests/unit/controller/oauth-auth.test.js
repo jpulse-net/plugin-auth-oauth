@@ -15,16 +15,17 @@
  *                   OauthAuthController's own logic only.
  * @file            plugins/auth-oauth/webapp/tests/unit/controller/oauth-auth.test.js
  * @version         1.0.0
- * @release         2026-07-29
+ * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @license         BSL 1.1 -- see LICENSE file; for commercial use: team@jpulse.net
- * @genai           80%, Cursor 3.12, Claude Sonnet 5
+ * @genai           80%, Cursor 3.13, Claude Sonnet 5
  */
 
 import { describe, test, expect, jest, beforeAll, beforeEach } from '@jest/globals';
 import CommonUtils from '../../../../../../webapp/utils/common.js';
+import { getPreset } from '../../../utils/providerRegistry.js';
 
 // Jest hoists jest.mock() factories above imports and forbids them from closing over
 // out-of-scope variables unless the variable name starts with "mock" (case-insensitive).
@@ -40,7 +41,9 @@ const mockState = {
     createdUser: null,
     createError: null,
     providerById: null,
-    upsertedConfig: null
+    upsertedConfig: null,
+    adminRoles: ['admin', 'root'],
+    siteRoles: ['user', 'admin', 'root']
 };
 
 jest.mock('../../../model/oauthProvider.js', () => ({
@@ -122,6 +125,14 @@ jest.mock('../../../../../../webapp/controller/auth.js', () => ({
     default: { completeExternalAuth: jest.fn(async (req, res) => res.redirect('/')) }
 }));
 
+jest.mock('../../../../../../webapp/model/config.js', () => ({
+    __esModule: true,
+    default: {
+        getEffectiveAdminRoles: jest.fn(() => mockState.adminRoles),
+        getEffectiveRoles: jest.fn(() => mockState.siteRoles)
+    }
+}));
+
 function makeReq({ params = {}, query = {}, session = {} } = {}) {
     return {
         params,
@@ -194,6 +205,8 @@ describe('OauthAuthController', () => {
         mockState.createError = null;
         mockState.providerById = null;
         mockState.upsertedConfig = null;
+        mockState.adminRoles = ['admin', 'root'];
+        mockState.siteRoles = ['user', 'admin', 'root'];
     });
 
     describe('apiProviders', () => {
@@ -213,6 +226,24 @@ describe('OauthAuthController', () => {
                 data: [
                     { id: 'a-provider', label: 'A', icon: '🔐', buttonColor: '#222', initUrl: '/api/1/auth-oauth/init/a-provider', order: 10 },
                     { id: 'b-provider', label: 'B', icon: '🔗', buttonColor: '#111', initUrl: '/api/1/auth-oauth/init/b-provider', order: 20 }
+                ]
+            });
+        });
+
+        test('falls back to the preset label/icon/color when the admin left them blank', async () => {
+            mockState.providers = [
+                { id: 'google-corp', preset: 'google', enabled: true, order: 0 }
+            ];
+            const req = makeReq();
+            const res = makeRes();
+
+            await OauthAuthController.apiProviders(req, res);
+
+            expect(res.json).toHaveBeenCalledWith({
+                success: true,
+                data: [
+                    { id: 'google-corp', label: 'Google', icon: getPreset('google').icon, buttonColor: '#4285F4',
+                      initUrl: '/api/1/auth-oauth/init/google-corp', order: 0 }
                 ]
             });
         });
@@ -503,6 +534,68 @@ describe('OauthAuthController', () => {
             expect(res.redirect).toHaveBeenCalledWith('/auth/oauth-error.shtml?reason=AMBIGUOUS_EMAIL_MATCH');
         });
 
+        test('link-by-email: normalizes a mixed-case IdP email before the local lookup (W-198)', async () => {
+            mockState.providerWithSecret = oidcProvider;
+            oauthClient.exchangeCodeForTokens.mockResolvedValueOnce({
+                tokens: { access_token: 'test-access-token' },
+                claims: { sub: 'sub-456', email: 'User@Example.COM', email_verified: true, name: 'Test User' }
+            });
+            const existingUser = { _id: 'user-id-2', username: 'existinguser', status: 'active', email: 'user@example.com' };
+            UserModel.find
+                .mockResolvedValueOnce([])
+                .mockResolvedValueOnce([existingUser]);
+
+            const req = makePendingReq();
+            const res = makeRes();
+
+            await OauthAuthController.apiCallback(req, res);
+
+            expect(UserModel.find).toHaveBeenNthCalledWith(2, { email: 'user@example.com' }, { limit: 2 });
+            expect(AuthController.completeExternalAuth).toHaveBeenCalledWith(req, res, existingUser, 'oauth', '/dashboard');
+        });
+
+        test('link-by-email: fails closed with LOCAL_EMAIL_NOT_VERIFIED when the matched local account has not verified its email (W-198)', async () => {
+            mockState.providerWithSecret = oidcProvider;
+            oauthClient.exchangeCodeForTokens.mockResolvedValueOnce({
+                tokens: { access_token: 'test-access-token' },
+                claims: { sub: 'sub-456', email: 'squatted@example.com', email_verified: true, name: 'Test User' }
+            });
+            const unverifiedLocalUser = {
+                _id: 'user-id-attacker', username: 'attacker', status: 'active',
+                email: 'squatted@example.com', emailVerified: false
+            };
+            UserModel.find
+                .mockResolvedValueOnce([])
+                .mockResolvedValueOnce([unverifiedLocalUser]);
+
+            const req = makePendingReq();
+            const res = makeRes();
+
+            await OauthAuthController.apiCallback(req, res);
+
+            expect(res.redirect).toHaveBeenCalledWith('/auth/oauth-error.shtml?reason=LOCAL_EMAIL_NOT_VERIFIED');
+            expect(AuthController.completeExternalAuth).not.toHaveBeenCalled();
+        });
+
+        test('link-by-email: links a matched account whose emailVerified is missing (pre-W-198, grandfathered)', async () => {
+            mockState.providerWithSecret = oidcProvider;
+            oauthClient.exchangeCodeForTokens.mockResolvedValueOnce({
+                tokens: { access_token: 'test-access-token' },
+                claims: { sub: 'sub-456', email: 'user@example.com', email_verified: true, name: 'Test User' }
+            });
+            const existingUser = { _id: 'user-id-2', username: 'existinguser', status: 'active', email: 'user@example.com' };
+            UserModel.find
+                .mockResolvedValueOnce([])
+                .mockResolvedValueOnce([existingUser]);
+
+            const req = makePendingReq();
+            const res = makeRes();
+
+            await OauthAuthController.apiCallback(req, res);
+
+            expect(AuthController.completeExternalAuth).toHaveBeenCalledWith(req, res, existingUser, 'oauth', '/dashboard');
+        });
+
         test('sub-only/link-by-email: rejects with USER_NOT_PROVISIONED when no sub or email match is found', async () => {
             mockState.providerWithSecret = oidcProvider;
             mockState.pluginDoc = { config: { defaultLinkingStrategy: 'link-by-email' } };
@@ -544,6 +637,7 @@ describe('OauthAuthController', () => {
                 expect(UserModel.create).toHaveBeenCalledWith(expect.objectContaining({
                     username: 'jane',
                     email: 'jane@example.com',
+                    emailVerified: true,
                     hasLocalPassword: false,
                     roles: ['user'],
                     status: 'active',
@@ -615,6 +709,26 @@ describe('OauthAuthController', () => {
                 expect(UserModel.create).toHaveBeenCalledWith(expect.objectContaining({ roles: ['user'] }));
             });
 
+            test('strips a site-defined admin-equivalent role, not just the literal admin/root (W-147)', async () => {
+                // A site can add a custom role (e.g. "superuser") to data.general.adminRoles;
+                // sanitizeJitRoles() must consult that, not a hardcoded ['admin', 'root'] list.
+                mockState.adminRoles = ['admin', 'root', 'superuser'];
+                mockState.providerWithSecret = { ...oidcProvider, linkingStrategy: 'jit-create' };
+                mockState.pluginDoc = { config: { jitDefaultRoles: ['user', 'superuser'] } };
+                oauthClient.exchangeCodeForTokens.mockResolvedValueOnce({
+                    tokens: { access_token: 'test-access-token' },
+                    claims: { sub: 'sub-new', email: 'jane@example.com', email_verified: true, name: 'Jane Doe' }
+                });
+                mockState.createdUser = { _id: 'user-id-new', username: 'jane', status: 'active' };
+
+                const req = makePendingReq();
+                const res = makeRes();
+
+                await OauthAuthController.apiCallback(req, res);
+
+                expect(UserModel.create).toHaveBeenCalledWith(expect.objectContaining({ roles: ['user'] }));
+            });
+
             test('redirects to ACCOUNT_PENDING_APPROVAL when jitDefaultStatus is pending', async () => {
                 mockState.providerWithSecret = { ...oidcProvider, linkingStrategy: 'jit-create' };
                 mockState.pluginDoc = { config: { jitDefaultStatus: 'pending' } };
@@ -635,37 +749,106 @@ describe('OauthAuthController', () => {
             });
         });
 
-        test('rejects a locked account', async () => {
+        test('rejects a suspended account', async () => {
             mockState.providerWithSecret = oidcProvider;
             oauthClient.exchangeCodeForTokens.mockResolvedValueOnce({
                 tokens: { access_token: 'test-access-token' },
                 claims: { sub: 'sub-123', email: 'user@example.com', email_verified: true }
             });
-            mockState.userFindResult = [{ _id: 'user-id-3', username: 'lockeduser', status: 'locked' }];
+            mockState.userFindResult = [{ _id: 'user-id-3', username: 'suspendeduser', status: 'suspended' }];
 
             const req = makePendingReq();
             const res = makeRes();
 
             await OauthAuthController.apiCallback(req, res);
 
-            expect(res.redirect).toHaveBeenCalledWith('/auth/oauth-error.shtml?reason=ACCOUNT_LOCKED');
+            expect(res.redirect).toHaveBeenCalledWith('/auth/oauth-error.shtml?reason=ACCOUNT_SUSPENDED');
             expect(AuthController.completeExternalAuth).not.toHaveBeenCalled();
         });
 
-        test('rejects a disabled account', async () => {
+        test('rejects a terminated account', async () => {
             mockState.providerWithSecret = oidcProvider;
             oauthClient.exchangeCodeForTokens.mockResolvedValueOnce({
                 tokens: { access_token: 'test-access-token' },
                 claims: { sub: 'sub-123', email: 'user@example.com', email_verified: true }
             });
-            mockState.userFindResult = [{ _id: 'user-id-4', username: 'disableduser', status: 'disabled' }];
+            mockState.userFindResult = [{ _id: 'user-id-4', username: 'terminateduser', status: 'terminated' }];
 
             const req = makePendingReq();
             const res = makeRes();
 
             await OauthAuthController.apiCallback(req, res);
 
-            expect(res.redirect).toHaveBeenCalledWith('/auth/oauth-error.shtml?reason=ACCOUNT_DISABLED');
+            expect(res.redirect).toHaveBeenCalledWith('/auth/oauth-error.shtml?reason=ACCOUNT_TERMINATED');
+            expect(AuthController.completeExternalAuth).not.toHaveBeenCalled();
+        });
+
+        test('rejects an inactive account', async () => {
+            mockState.providerWithSecret = oidcProvider;
+            oauthClient.exchangeCodeForTokens.mockResolvedValueOnce({
+                tokens: { access_token: 'test-access-token' },
+                claims: { sub: 'sub-123', email: 'user@example.com', email_verified: true }
+            });
+            mockState.userFindResult = [{ _id: 'user-id-6', username: 'inactiveuser', status: 'inactive' }];
+
+            const req = makePendingReq();
+            const res = makeRes();
+
+            await OauthAuthController.apiCallback(req, res);
+
+            expect(res.redirect).toHaveBeenCalledWith('/auth/oauth-error.shtml?reason=ACCOUNT_INACTIVE');
+            expect(AuthController.completeExternalAuth).not.toHaveBeenCalled();
+        });
+
+        test('allowedDomains rejects an existing sub-matched user whose identity email domain is no longer allowed', async () => {
+            mockState.providerWithSecret = { ...oidcProvider, allowedDomains: ['corp.example.com'] };
+            oauthClient.exchangeCodeForTokens.mockResolvedValueOnce({
+                tokens: { access_token: 'test-access-token' },
+                claims: { sub: 'sub-123', email: 'user@gmail.com', email_verified: true }
+            });
+            // Sub-match lookup succeeds (this user was already linked before allowedDomains was tightened)
+            mockState.userFindResult = [{ _id: 'user-id-7', username: 'existinguser', status: 'active' }];
+
+            const req = makePendingReq();
+            const res = makeRes();
+
+            await OauthAuthController.apiCallback(req, res);
+
+            expect(res.redirect).toHaveBeenCalledWith('/auth/oauth-error.shtml?reason=DOMAIN_NOT_ALLOWED');
+            expect(AuthController.completeExternalAuth).not.toHaveBeenCalled();
+        });
+
+        test('allowedDomains rejects a jit-create attempt from a disallowed domain before any user is created', async () => {
+            mockState.providerWithSecret = { ...oidcProvider, linkingStrategy: 'jit-create', allowedDomains: ['corp.example.com'] };
+            oauthClient.exchangeCodeForTokens.mockResolvedValueOnce({
+                tokens: { access_token: 'test-access-token' },
+                claims: { sub: 'sub-new', email: 'jane@gmail.com', email_verified: true, name: 'Jane Doe' }
+            });
+
+            const req = makePendingReq();
+            const res = makeRes();
+
+            await OauthAuthController.apiCallback(req, res);
+
+            expect(res.redirect).toHaveBeenCalledWith('/auth/oauth-error.shtml?reason=DOMAIN_NOT_ALLOWED');
+            expect(UserModel.create).not.toHaveBeenCalled();
+            expect(AuthController.completeExternalAuth).not.toHaveBeenCalled();
+        });
+
+        test('allowedDomains allows a jit-create attempt whose identity email domain matches the allowlist', async () => {
+            mockState.providerWithSecret = { ...oidcProvider, linkingStrategy: 'jit-create', allowedDomains: ['corp.example.com'] };
+            oauthClient.exchangeCodeForTokens.mockResolvedValueOnce({
+                tokens: { access_token: 'test-access-token' },
+                claims: { sub: 'sub-new', email: 'jane@corp.example.com', email_verified: true, name: 'Jane Doe' }
+            });
+            mockState.createdUser = { _id: 'user-id-new', username: 'jane', status: 'active' };
+
+            const req = makePendingReq();
+            const res = makeRes();
+
+            await OauthAuthController.apiCallback(req, res);
+
+            expect(AuthController.completeExternalAuth).toHaveBeenCalled();
         });
 
         test('custom OAuth2 preset: fetches userinfo and maps fields per the admin-configured mapping', async () => {
@@ -830,6 +1013,25 @@ describe('OauthAuthController', () => {
                     hasLocalPassword: true
                 }
             });
+        });
+
+        test('inherits the preset label/icon for blank fields, same as the login page', async () => {
+            mockState.userById = { _id: 'user-id-1', username: 'testuser', hasLocalPassword: true, oauth: { 'google-corp': {} } };
+            mockState.linkedProviders = [{ providerId: 'google-corp', sub: 'sub-123', email: 'user@example.com' }];
+            mockState.canUnlinkResult = { allowed: true };
+            mockState.providers = [
+                { id: 'google-corp', preset: 'google', enabled: true },
+                { id: 'okta-prod', preset: 'oidc', enabled: true }
+            ];
+
+            const req = makeAuthedReq();
+            const res = makeRes();
+
+            await OauthAuthController.apiUserProviders(req, res);
+
+            const { linked, available } = res.json.mock.calls[0][0].data;
+            expect(linked[0]).toMatchObject({ label: 'Google', icon: getPreset('google').icon });
+            expect(available[0]).toMatchObject({ label: 'OIDC Provider', icon: '🔐' });
         });
 
         test('sends a 404 when the user cannot be found', async () => {
@@ -1078,6 +1280,30 @@ describe('OauthAuthController', () => {
             });
         });
 
+        describe('apiAdminAssignableRoles', () => {
+            test('returns this site\'s roles with admin-equivalent roles removed', async () => {
+                mockState.siteRoles = ['user', 'admin', 'root', 'editor'];
+                mockState.adminRoles = ['admin', 'root'];
+                const req = makeAuthedReq();
+                const res = makeRes();
+
+                await OauthAuthController.apiAdminAssignableRoles(req, res);
+
+                expect(res.json).toHaveBeenCalledWith({ success: true, data: { roles: ['user', 'editor'] } });
+            });
+
+            test('excludes a site-defined admin-equivalent role, not just the literal admin/root', async () => {
+                mockState.siteRoles = ['user', 'admin', 'root', 'superuser'];
+                mockState.adminRoles = ['admin', 'root', 'superuser'];
+                const req = makeAuthedReq();
+                const res = makeRes();
+
+                await OauthAuthController.apiAdminAssignableRoles(req, res);
+
+                expect(res.json).toHaveBeenCalledWith({ success: true, data: { roles: ['user'] } });
+            });
+        });
+
         describe('apiAdminProvidersCreate', () => {
             test('creates a provider, encrypts a submitted clientSecret, and saves the full config', async () => {
                 mockState.pluginDoc = { config: { defaultLinkingStrategy: 'link-by-email', providers: [{ id: 'existing-one', preset: 'google' }] } };
@@ -1217,6 +1443,40 @@ describe('OauthAuthController', () => {
                 expect(saved.icon).toContain('<path');
                 expect(saved.icon).toContain('stroke-width="2"');
                 expect(saved.icon).toContain('fill="currentColor"');
+            });
+
+            test('rejects an allowedDomains entry that is not a plausible domain', async () => {
+                const req = makeAuthedReq();
+                req.body = { id: 'my-provider', preset: 'google', allowedDomains: ['not an email domain'] };
+                const res = makeRes();
+
+                await OauthAuthController.apiAdminProvidersCreate(req, res);
+
+                expect(global.CommonUtils.sendError).toHaveBeenCalledWith(req, res, 400, expect.any(String), 'VALIDATION_ERROR');
+                expect(PluginModel.upsert).not.toHaveBeenCalled();
+            });
+
+            test('rejects an allowedDomains entry containing "@" (email, not a domain)', async () => {
+                const req = makeAuthedReq();
+                req.body = { id: 'my-provider', preset: 'google', allowedDomains: ['user@corp.example.com'] };
+                const res = makeRes();
+
+                await OauthAuthController.apiAdminProvidersCreate(req, res);
+
+                expect(global.CommonUtils.sendError).toHaveBeenCalledWith(req, res, 400, expect.any(String), 'VALIDATION_ERROR');
+                expect(PluginModel.upsert).not.toHaveBeenCalled();
+            });
+
+            test('lowercase-normalizes and dedupes a valid allowedDomains list', async () => {
+                mockState.pluginDoc = { config: { providers: [] } };
+                const req = makeAuthedReq();
+                req.body = { id: 'my-provider', preset: 'google', allowedDomains: ['Corp.Example.com', 'corp.example.com', ' partner.example.org '] };
+                const res = makeRes();
+
+                await OauthAuthController.apiAdminProvidersCreate(req, res);
+
+                expect(global.CommonUtils.sendError).not.toHaveBeenCalled();
+                expect(mockState.upsertedConfig.providers[0].allowedDomains).toEqual(['corp.example.com', 'partner.example.org']);
             });
         });
 
@@ -1361,6 +1621,124 @@ describe('OauthAuthController', () => {
                 await OauthAuthController.apiAdminProvidersTest(req, res);
 
                 expect(global.CommonUtils.sendError).toHaveBeenCalledWith(req, res, 400, expect.any(String), 'PROVIDER_TEST_FAILED');
+            });
+        });
+
+        describe('onPluginConfigBeforeSave hook (W-200: single Save button for the provider table)', () => {
+            test('is a no-op when configData has no providers array (General/Security-only save)', async () => {
+                const configData = { defaultLinkingStrategy: 'link-by-email' };
+                await OauthAuthController.onPluginConfigBeforeSave({ configData, oldConfig: null });
+
+                expect(configData).toEqual({ defaultLinkingStrategy: 'link-by-email' });
+                expect(OauthProviderModel.setClientSecret).not.toHaveBeenCalled();
+            });
+
+            test('encrypts a submitted plaintext clientSecret and strips it from the persisted entry', async () => {
+                const configData = { providers: [{ id: 'google-corp', preset: 'google', clientSecret: 'shh' }] };
+                const oldConfig = { config: { providers: [] } };
+
+                await OauthAuthController.onPluginConfigBeforeSave({ configData, oldConfig });
+
+                expect(OauthProviderModel.setClientSecret).toHaveBeenCalledWith('google-corp', 'shh');
+                expect(configData.providers[0].clientSecretRef).toBe('ref:authOauth_providers/google-corp/clientSecret');
+                expect(configData.providers[0].clientSecret).toBeUndefined();
+                expect(OauthProviderModel.invalidateCachedProviders).toHaveBeenCalled();
+            });
+
+            test('carries forward the existing clientSecretRef when clientSecret is left blank', async () => {
+                const configData = { providers: [{ id: 'google-corp', preset: 'google', label: 'Updated Label' }] };
+                const oldConfig = { config: { providers: [{ id: 'google-corp', preset: 'google', clientSecretRef: 'ref:authOauth_providers/google-corp/clientSecret' }] } };
+
+                await OauthAuthController.onPluginConfigBeforeSave({ configData, oldConfig });
+
+                expect(OauthProviderModel.setClientSecret).not.toHaveBeenCalled();
+                expect(configData.providers[0].clientSecretRef).toBe('ref:authOauth_providers/google-corp/clientSecret');
+                expect(configData.providers[0].label).toBe('Updated Label');
+            });
+
+            test('never trusts a client-submitted clientSecretRef - re-derives from the stored entry instead', async () => {
+                const configData = { providers: [{ id: 'google-corp', preset: 'google', clientSecretRef: 'ref:attacker-supplied' }] };
+                const oldConfig = { config: { providers: [{ id: 'google-corp', preset: 'google', clientSecretRef: 'ref:authOauth_providers/google-corp/clientSecret' }] } };
+
+                await OauthAuthController.onPluginConfigBeforeSave({ configData, oldConfig });
+
+                expect(configData.providers[0].clientSecretRef).toBe('ref:authOauth_providers/google-corp/clientSecret');
+            });
+
+            test('deletes the encrypted secret for a provider removed from the list', async () => {
+                const configData = { providers: [] };
+                const oldConfig = { config: { providers: [{ id: 'google-corp', preset: 'google', clientSecretRef: 'ref:authOauth_providers/google-corp/clientSecret' }] } };
+
+                await OauthAuthController.onPluginConfigBeforeSave({ configData, oldConfig });
+
+                expect(OauthProviderModel.deleteClientSecret).toHaveBeenCalledWith('google-corp');
+            });
+
+            test('sanitizes icon and allowedDomains for every provider in the list', async () => {
+                const configData = {
+                    providers: [{
+                        id: 'google-corp', preset: 'oidc',
+                        icon: '<svg onload="alert(1)"><path d="M1 1"></path></svg>',
+                        allowedDomains: ['  Example.COM  ', 'example.com']
+                    }]
+                };
+                const oldConfig = { config: { providers: [] } };
+
+                await OauthAuthController.onPluginConfigBeforeSave({ configData, oldConfig });
+
+                expect(configData.providers[0].icon).not.toContain('onload');
+                expect(configData.providers[0].icon).toContain('<path');
+                expect(configData.providers[0].allowedDomains).toEqual(['example.com']);
+            });
+
+            test('throws (aborting the save) on an invalid provider id', async () => {
+                const configData = { providers: [{ id: 'bad id!', preset: 'google' }] };
+                const oldConfig = { config: { providers: [] } };
+
+                await expect(OauthAuthController.onPluginConfigBeforeSave({ configData, oldConfig }))
+                    .rejects.toThrow(/Provider id is required/);
+                expect(PluginModel.upsert).not.toHaveBeenCalled();
+            });
+
+            test('names a row without an id by position, so a leftover draft is findable', async () => {
+                const configData = {
+                    providers: [
+                        { id: 'google-corp', preset: 'google' },
+                        { id: '', preset: 'google' }
+                    ]
+                };
+
+                await expect(OauthAuthController.onPluginConfigBeforeSave({ configData, oldConfig: { config: { providers: [] } } }))
+                    .rejects.toThrow(/Provider in row 2: Provider id is required/);
+            });
+
+            test('throws on an unknown preset', async () => {
+                const configData = { providers: [{ id: 'my-provider', preset: 'not-a-real-preset' }] };
+                await expect(OauthAuthController.onPluginConfigBeforeSave({ configData, oldConfig: { config: { providers: [] } } }))
+                    .rejects.toThrow(/Unknown preset/);
+            });
+
+            test('throws on a duplicate provider id within the submitted list', async () => {
+                const configData = {
+                    providers: [
+                        { id: 'google-corp', preset: 'google' },
+                        { id: 'google-corp', preset: 'oidc' }
+                    ]
+                };
+                await expect(OauthAuthController.onPluginConfigBeforeSave({ configData, oldConfig: { config: { providers: [] } } }))
+                    .rejects.toThrow(/Duplicate provider id/);
+            });
+
+            test('leaves an unmodified provider list untouched (no accidental clientSecret round-trip)', async () => {
+                const stored = { id: 'google-corp', preset: 'google', clientSecretRef: 'ref:authOauth_providers/google-corp/clientSecret' };
+                const configData = { providers: [{ ...stored }] };
+                const oldConfig = { config: { providers: [stored] } };
+
+                await OauthAuthController.onPluginConfigBeforeSave({ configData, oldConfig });
+
+                expect(OauthProviderModel.setClientSecret).not.toHaveBeenCalled();
+                expect(OauthProviderModel.deleteClientSecret).not.toHaveBeenCalled();
+                expect(configData.providers[0]).toEqual(stored);
             });
         });
     });

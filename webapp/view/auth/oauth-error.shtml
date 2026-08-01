@@ -13,7 +13,7 @@
  *                   now; revisit once plugin i18n loading exists.
  * @file            plugins/auth-oauth/webapp/view/auth/oauth-error.shtml
  * @version         1.0.0
- * @release         2026-07-29
+ * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -91,10 +91,13 @@
                 USER_NOT_PROVISIONED: 'No account was found for your identity provider login. Please contact your administrator to get access.',
                 EMAIL_NOT_VERIFIED_AT_PROVIDER: 'Your identity provider has not verified your email address, so it cannot be used to sign in. Please verify your email with the provider, or contact your administrator.',
                 AMBIGUOUS_EMAIL_MATCH: 'Your email address matches more than one account. Please contact your administrator to resolve this.',
+                LOCAL_EMAIL_NOT_VERIFIED: 'The local account matching your email address has not verified ownership of it. Please contact your administrator.',
+                DOMAIN_NOT_ALLOWED: 'Your email domain is not permitted to sign in through this identity provider. Please contact your administrator.',
                 ALREADY_LINKED_TO_ANOTHER_ACCOUNT: 'This identity provider account is already connected to a different user. Please disconnect it there first, or sign in with that account instead.',
-                ACCOUNT_LOCKED: 'This account is locked. Please contact your administrator.',
-                ACCOUNT_DISABLED: 'This account is disabled. Please contact your administrator.',
                 ACCOUNT_PENDING_APPROVAL: 'Your account is awaiting administrator approval. Please check back later.',
+                ACCOUNT_SUSPENDED: 'This account has been suspended. Please contact your administrator.',
+                ACCOUNT_TERMINATED: 'This account has been terminated. Please contact your administrator.',
+                ACCOUNT_INACTIVE: 'This account is inactive. Please contact your administrator.',
                 INTERNAL_ERROR: 'An unexpected error occurred. Please try again or contact your administrator.'
             };
 

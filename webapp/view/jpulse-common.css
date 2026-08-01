@@ -8,7 +8,7 @@
  *                    style the W-194 custom renderer's provider table/form.
  * @file            plugins/auth-oauth/webapp/view/jpulse-common.css
  * @version         1.0.0
- * @release         2026-07-29
+ * @release         2026-07-31
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -29,11 +29,17 @@
 
 /* Constrain an admin-supplied inline SVG icon (see the "Icon" field / sanitizeIcon() in
    oauthAuth.js) to the same visual size as the emoji-icon common case - an SVG with no explicit
-   width/height otherwise defaults to ~300x150px and breaks the button layout. */
+   width/height otherwise defaults to ~300x150px and breaks the button layout. `vertical-align:
+   middle` matters even though the parent `<span>` is centered by the button's flex layout: a
+   replaced element (the svg) is still laid out on the icon-only span's own internal line box,
+   and the default `vertical-align: baseline` leaves room below it for a text descender that
+   isn't there - visually pushing the icon up out of that centered box. An emoji doesn't have
+   this problem since it's a text glyph sitting on its own baseline, not a replaced element. */
 .local-auth-method svg {
     width: 20px;
     height: 20px;
     flex-shrink: 0;
+    vertical-align: middle;
 }
 
 /* W-194 custom renderer: provider table (config.schema "providers" field) */
@@ -48,6 +54,25 @@
 
 .plg-oauth-row-actions {
     white-space: nowrap;
+}
+
+/* Icon + label in the table's "Icon & Label" column. Flex (rather than a manual vertical-align
+   offset, which needs a different number per icon type) keeps the icon centered against the
+   label text regardless of whether it's a text glyph (emoji) or a replaced element (an SVG's
+   <img> preview) - see the login-button svg rule above for why those two behave differently. */
+.plg-oauth-label-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.plg-oauth-icon-preview {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    font-size: 16px;
+    text-align: center;
+    object-fit: contain;
 }
 
 .plg-oauth-add-btn {
@@ -67,13 +92,6 @@
     margin-bottom: 10px;
 }
 
-.plg-oauth-inline-checkbox {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: normal;
-}
-
 .plg-oauth-form-actions {
     display: flex;
     align-items: center;
@@ -83,6 +101,10 @@
 
 .plg-oauth-form-error {
     font-size: 13px;
+}
+
+.plg-oauth-form-hint {
+    margin-top: 8px;
 }
 
 /* EOF plugins/auth-oauth/webapp/view/jpulse-common.css */
