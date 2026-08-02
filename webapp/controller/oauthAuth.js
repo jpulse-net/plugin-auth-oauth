@@ -40,8 +40,8 @@
  *                   login-page cache; the create/update/delete endpoints remain available as a
  *                   standalone API surface but the admin UI no longer drives them.
  * @file            plugins/auth-oauth/webapp/controller/oauthAuth.js
- * @version         1.0.2
- * @release         2026-08-01
+ * @version         1.0.3
+ * @release         2026-08-02
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -98,9 +98,24 @@ function getClientIp(req) {
     return req.headers?.['x-real-ip']?.trim() || req.ip || req.connection?.remoteAddress || 'unknown';
 }
 
+/**
+ * Best-effort request protocol detection (X-Forwarded-Proto first hop, then req.protocol) -
+ * mirrors getClientIp()'s priority order above, for the same reason: the framework's Express app
+ * never calls app.set('trust proxy', ...) (a framework gap - see W-197 design doc Gap 9), so
+ * req.protocol always resolves to 'http' behind a TLS-terminating reverse proxy - even though the
+ * framework's own reference nginx config (templates/deploy/nginx.prod.conf) already sets
+ * X-Forwarded-Proto on every request, and the site is genuinely served over https. Both call sites
+ * below must agree with whatever redirect_uri is actually registered at the IdP, or the flow fails
+ * with redirect_uri_mismatch - at the consent screen for computeRedirectUri(), or at code exchange
+ * for apiCallback()'s currentUrl (openid-client re-derives its own redirect_uri from that URL).
+ */
+function getRequestProtocol(req) {
+    return req.headers?.['x-forwarded-proto']?.split(',')[0].trim() || req.protocol;
+}
+
 /** Compute this deployment's callback redirect_uri for a provider (design doc §8). */
 function computeRedirectUri(req, providerId) {
-    return `${req.protocol}://${req.get('host')}/api/1/auth-oauth/callback/${encodeURIComponent(providerId)}`;
+    return `${getRequestProtocol(req)}://${req.get('host')}/api/1/auth-oauth/callback/${encodeURIComponent(providerId)}`;
 }
 
 /** Map a provider's raw userinfo response through its admin-configured field mapping (custom OAuth2 preset). */
@@ -849,7 +864,7 @@ class OauthAuthController {
             }
 
             const config = await oauthClient.getConfiguration(providerWithSecret);
-            const currentUrl = new URL(req.protocol + '://' + req.get('host') + req.originalUrl);
+            const currentUrl = new URL(getRequestProtocol(req) + '://' + req.get('host') + req.originalUrl);
 
             // openid-client validates `state` (against expectedState) and, when a nonce was sent,
             // the ID token's nonce claim - satisfies the CSRF/replay checks in the design doc's

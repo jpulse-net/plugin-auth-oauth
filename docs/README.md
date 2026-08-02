@@ -1,4 +1,4 @@
-# jPulse Framework / Plugins / Auth-OAuth / User Documentation v1.0.2
+# jPulse Framework / Plugins / Auth-OAuth / User Documentation v1.0.3
 
 Adds "Sign in with..." buttons to your login page for OAuth 2.0 / OpenID Connect identity providers
 (Google, Microsoft Entra ID, Okta, Auth0, Keycloak, ADFS, or any generic OIDC/OAuth2 provider).

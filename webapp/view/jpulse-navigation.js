@@ -3,8 +3,8 @@
  * @tagline         Navigation of the Auth-OAuth Plugin
  * @description     Navigation for the Auth-OAuth Plugin, appended to the framework navigation
  * @file            plugins/auth-oauth/webapp/view/jpulse-navigation.js
- * @version         1.0.2
- * @release         2026-08-01
+ * @version         1.0.3
+ * @release         2026-08-02
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/

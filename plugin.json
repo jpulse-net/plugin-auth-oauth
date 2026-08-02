@@ -1,7 +1,7 @@
 {
     "name": "auth-oauth",
     "npmPackage": "@jpulse-net/plugin-auth-oauth",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "icon": "🔑",
     "summary": "OAuth 2.0 / OpenID Connect single sign-on (Google, Microsoft, Okta...)",
     "description": "<p>Adds OAuth 2.0 / OpenID Connect (OIDC) based single sign-on to jPulse Framework. Supports public sites (Google) and org-internal sites (Microsoft Entra ID, Okta, Auth0, Keycloak, ADFS via generic OIDC discovery), plus manual OAuth2 for non-OIDC providers.</p><ul><li><strong>Authorization Code Flow with PKCE:</strong> mandatory PKCE (S256), state, and OIDC nonce on every provider</li><li><strong>Flexible User Linking:</strong> sub-only, link-by-email, or just-in-time account creation, per provider</li><li><strong>Composes with MFA:</strong> auth-mfa's TOTP step runs after successful SSO identity resolution</li></ul>",

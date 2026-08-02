@@ -14,8 +14,8 @@
  *                   UserModel, PluginModel, AuthController) are mocked - this file exercises
  *                   OauthAuthController's own logic only.
  * @file            plugins/auth-oauth/webapp/tests/unit/controller/oauth-auth.test.js
- * @version         1.0.2
- * @release         2026-08-01
+ * @version         1.0.3
+ * @release         2026-08-02
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -133,13 +133,13 @@ jest.mock('../../../../../../webapp/model/config.js', () => ({
     }
 }));
 
-function makeReq({ params = {}, query = {}, session = {} } = {}) {
+function makeReq({ params = {}, query = {}, session = {}, protocol = 'https', headers = {} } = {}) {
     return {
         params,
         query,
         session,
-        protocol: 'https',
-        headers: {},
+        protocol,
+        headers,
         ip: '203.0.113.7',
         connection: { remoteAddress: '203.0.113.7' },
         get: jest.fn(() => 'app.example.com'),
@@ -356,6 +356,34 @@ describe('OauthAuthController', () => {
             expect(res.redirect).toHaveBeenCalledWith('https://idp.example.com/authorize?state=test-state');
         });
 
+        test('prefers X-Forwarded-Proto over req.protocol when building redirectUri (W-197 Gap 9 - the framework never calls app.set(\'trust proxy\'), so req.protocol is unreliable behind a TLS-terminating reverse proxy)', async () => {
+            mockState.providerWithSecret = { id: 'google-corp', type: 'oidc', enabled: true, scopes: ['openid'] };
+            // Mirrors a real deployment: nginx terminates TLS and forwards plain HTTP, setting
+            // X-Forwarded-Proto - Express's own req.protocol would say 'http' here without it.
+            const req = makeReq({ params: { provider: 'google-corp' }, protocol: 'http', headers: { 'x-forwarded-proto': 'https' } });
+            const res = makeRes();
+
+            await OauthAuthController.apiInit(req, res);
+
+            expect(oauthClient.buildAuthorizationUrl).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({ redirectUri: 'https://app.example.com/api/1/auth-oauth/callback/google-corp' })
+            );
+        });
+
+        test('falls back to req.protocol when there is no X-Forwarded-Proto header (direct, non-proxied deployment)', async () => {
+            mockState.providerWithSecret = { id: 'google-corp', type: 'oidc', enabled: true, scopes: ['openid'] };
+            const req = makeReq({ params: { provider: 'google-corp' }, protocol: 'http' });
+            const res = makeRes();
+
+            await OauthAuthController.apiInit(req, res);
+
+            expect(oauthClient.buildAuthorizationUrl).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({ redirectUri: 'http://app.example.com/api/1/auth-oauth/callback/google-corp' })
+            );
+        });
+
         test('omits the nonce for a non-OIDC (custom OAuth2) provider', async () => {
             mockState.providerWithSecret = { id: 'legacy-sso', type: 'oauth2', enabled: true, scopes: [] };
             const req = makeReq({ params: { provider: 'legacy-sso' } });
@@ -456,6 +484,23 @@ describe('OauthAuthController', () => {
             await OauthAuthController.apiCallback(req, res);
 
             expect(res.redirect).toHaveBeenCalledWith('/auth/oauth-error.shtml?reason=PROVIDER_ERROR');
+        });
+
+        test('prefers X-Forwarded-Proto over req.protocol when reconstructing currentUrl for token exchange (W-197 Gap 9 - openid-client re-derives its own redirect_uri from this URL, which must match what apiInit sent)', async () => {
+            mockState.providerWithSecret = oidcProvider;
+            oauthClient.exchangeCodeForTokens.mockResolvedValueOnce({
+                tokens: { access_token: 'test-access-token' },
+                claims: { sub: 'sub-123', email: 'user@example.com', email_verified: true, name: 'Test User' }
+            });
+            mockState.userFindResult = [{ _id: 'user-id-1', username: 'testuser', status: 'active', oauth: { 'google-corp': { sub: 'sub-123' } } }];
+
+            const req = makePendingReq({ protocol: 'http', headers: { 'x-forwarded-proto': 'https' } });
+            const res = makeRes();
+
+            await OauthAuthController.apiCallback(req, res);
+
+            const currentUrlArg = oauthClient.exchangeCodeForTokens.mock.calls[0][1];
+            expect(currentUrlArg.protocol).toBe('https:');
         });
 
         test('sub-only fast path: resolves an existing linked user and hands off to completeExternalAuth', async () => {

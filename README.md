@@ -1,4 +1,4 @@
-# jPulse Framework / Plugins / Auth-OAuth / README v1.0.2
+# jPulse Framework / Plugins / Auth-OAuth / README v1.0.3
 
 OAuth 2.0 / OpenID Connect (OIDC) single sign-on plugin for jPulse Framework. Supports public sites
 (Google) and org-internal sites (Microsoft Entra ID, Okta, Auth0, Keycloak, ADFS via generic OIDC
@@ -160,6 +160,15 @@ This plugin extends the user schema with:
   below it. The two fields now only render when the effective strategy is `jit-create`, updating
   live as Linking Strategy is switched, without discarding a previously chosen selection if the
   admin switches away and back. No server-side or schema changes - config renderer only.
+- **Version 1.0.3 - Bugfix**: Fixes `redirect_uri_mismatch` at Google's consent screen on any
+  deployment behind a TLS-terminating reverse proxy (e.g. the framework's own reference nginx
+  config) - found on `bubblemap.net`'s very first live Google login attempt. `computeRedirectUri()`
+  and the callback handler's `currentUrl` reconstruction both used Express's `req.protocol`
+  directly, which resolves to `http` behind a proxy since the framework never calls `app.set('trust
+  proxy', ...)` (a framework-level gap, filed as `W-203` - not fixed in this plugin release).
+  Both call sites now go through a new `getRequestProtocol()` helper that prefers
+  `X-Forwarded-Proto`, mirroring the plugin's existing `getClientIp()` pattern for the same class of
+  problem with IP addresses. No config or schema changes.
 
 ## License
 

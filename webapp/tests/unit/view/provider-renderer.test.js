@@ -10,8 +10,8 @@
  *                   break out of value="..."). JSDOM is constructed by hand rather than via
  *                   testEnvironment: jsdom, which isn't installed - only the `jsdom` package is.
  * @file            plugins/auth-oauth/webapp/tests/unit/view/provider-renderer.test.js
- * @version         1.0.2
- * @release         2026-08-01
+ * @version         1.0.3
+ * @release         2026-08-02
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
