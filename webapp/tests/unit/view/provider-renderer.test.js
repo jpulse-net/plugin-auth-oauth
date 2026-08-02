@@ -10,8 +10,8 @@
  *                   break out of value="..."). JSDOM is constructed by hand rather than via
  *                   testEnvironment: jsdom, which isn't installed - only the `jsdom` package is.
  * @file            plugins/auth-oauth/webapp/tests/unit/view/provider-renderer.test.js
- * @version         1.0.1
- * @release         2026-07-31
+ * @version         1.0.2
+ * @release         2026-08-01
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -102,7 +102,11 @@ describe('auth-oauth provider config renderer', () => {
             // The framework's onChange does JSON.stringify into a hidden field, i.e. it snapshots
             // immediately - mirror that so a later mutation can't silently "fix" a stale report.
             onChange: jest.fn((value) => { reported = JSON.parse(JSON.stringify(value)); }),
-            disabled: !!options.disabled
+            disabled: !!options.disabled,
+            // The whole plugin config, as the real W-194 contract passes it - defaultLinkingStrategy
+            // is what a provider with no linkingStrategy override inherits (see
+            // effectiveLinkingStrategy() in the renderer).
+            config: options.config || {}
         };
         window.jPulse.plugins.authOauth.renderProviders(ctx);
     }
@@ -465,10 +469,16 @@ describe('auth-oauth provider config renderer', () => {
     });
 
     describe('JIT role override (W-147)', () => {
+        // The JIT: Override Roles/Status fields only render when this provider's *effective*
+        // linking strategy (its own override, or the inherited global default) is jit-create - see
+        // the "JIT-only fields" describe block below for that gating behavior itself. Every test in
+        // this block is about what the fields do once they're showing, so each fixture pins
+        // linkingStrategy: 'jit-create' (or, for a brand-new provider with no override yet, sets
+        // the global default via config) explicitly rather than relying on it.
         test('per-provider role selector loads this site\'s actual roles, not a hardcoded list', async () => {
             // The admin/assignable-roles endpoint already excludes admin-equivalent roles
             // server-side - this fixture reflects that response shape, not the raw role list.
-            mount([], { roles: ['user', 'editor'] });
+            mount([], { roles: ['user', 'editor'], config: { defaultLinkingStrategy: 'jit-create' } });
             await new Promise(resolve => setTimeout(resolve, 0));
             q('.plg-oauth-add-btn').click();
 
@@ -476,7 +486,7 @@ describe('auth-oauth provider config renderer', () => {
         });
 
         test('falls back to a plain "user" option if the roles fetch fails', async () => {
-            mount([], { rolesFetchFails: true });
+            mount([], { rolesFetchFails: true, config: { defaultLinkingStrategy: 'jit-create' } });
             await new Promise(resolve => setTimeout(resolve, 0));
             q('.plg-oauth-add-btn').click();
 
@@ -484,7 +494,7 @@ describe('auth-oauth provider config renderer', () => {
         });
 
         test('selecting nothing reports jitRoles as null (inherit the global default)', async () => {
-            mount([{ id: 'okta', preset: 'oidc', enabled: true, order: 10, jitRoles: ['editor'] }],
+            mount([{ id: 'okta', preset: 'oidc', enabled: true, order: 10, linkingStrategy: 'jit-create', jitRoles: ['editor'] }],
                 { roles: ['user', 'editor'] });
             await new Promise(resolve => setTimeout(resolve, 0));
             q('.plg-oauth-edit-btn').click();
@@ -499,7 +509,7 @@ describe('auth-oauth provider config renderer', () => {
         });
 
         test('selecting roles reports the exact site-defined roles chosen', async () => {
-            mount([{ id: 'okta', preset: 'oidc', enabled: true, order: 10 }],
+            mount([{ id: 'okta', preset: 'oidc', enabled: true, order: 10, linkingStrategy: 'jit-create' }],
                 { roles: ['user', 'editor', 'gofer'] });
             await new Promise(resolve => setTimeout(resolve, 0));
             q('.plg-oauth-edit-btn').click();
@@ -512,7 +522,7 @@ describe('auth-oauth provider config renderer', () => {
         });
 
         test('uses the same jpSelect dropdown widget as the rest of the config page, not a plain multiselect', () => {
-            mount([{ id: 'okta', preset: 'oidc', enabled: true, order: 10 }]);
+            mount([{ id: 'okta', preset: 'oidc', enabled: true, order: 10, linkingStrategy: 'jit-create' }]);
             q('.plg-oauth-edit-btn').click();
 
             expect(window.jPulse.UI.input.jpSelect.init).toHaveBeenCalledWith(q('.plg-f-jitRoles'));
@@ -521,8 +531,8 @@ describe('auth-oauth provider config renderer', () => {
 
         test('tears down the previous dropdown portal instead of leaking one into <body> per form open', () => {
             mount([
-                { id: 'okta', preset: 'oidc', enabled: true, order: 10 },
-                { id: 'auth0', preset: 'oidc', enabled: true, order: 20 }
+                { id: 'okta', preset: 'oidc', enabled: true, order: 10, linkingStrategy: 'jit-create' },
+                { id: 'auth0', preset: 'oidc', enabled: true, order: 20, linkingStrategy: 'jit-create' }
             ]);
 
             all('.plg-oauth-edit-btn')[0].click();
@@ -530,6 +540,64 @@ describe('auth-oauth provider config renderer', () => {
             q('.plg-oauth-done-btn').click(); // close - no form left open at all
 
             expect(window.document.body.querySelectorAll('.jp-jpselect-dropdown-stub')).toHaveLength(0);
+        });
+    });
+
+    describe('JIT-only fields are gated on the effective linking strategy', () => {
+        test('hidden for a provider whose effective strategy is not jit-create', () => {
+            mount([{ id: 'okta', preset: 'oidc', enabled: true, order: 10, linkingStrategy: 'link-by-email' }]);
+            q('.plg-oauth-edit-btn').click();
+
+            expect(q('.plg-f-jitRoles')).toBeNull();
+            expect(q('.plg-f-jitStatus')).toBeNull();
+        });
+
+        test('hidden when the provider has no override and the global default is not jit-create', () => {
+            mount([{ id: 'okta', preset: 'oidc', enabled: true, order: 10 }],
+                { config: { defaultLinkingStrategy: 'link-by-email' } });
+            q('.plg-oauth-edit-btn').click();
+
+            expect(q('.plg-f-jitRoles')).toBeNull();
+        });
+
+        test('shown when the provider has no override and the global default is jit-create', () => {
+            mount([{ id: 'okta', preset: 'oidc', enabled: true, order: 10 }],
+                { config: { defaultLinkingStrategy: 'jit-create' } });
+            q('.plg-oauth-edit-btn').click();
+
+            expect(q('.plg-f-jitRoles')).not.toBeNull();
+        });
+
+        test('appear live when switching Linking Strategy to jit-create, and disappear when switching away', () => {
+            mount([{ id: 'okta', preset: 'oidc', enabled: true, order: 10, linkingStrategy: 'link-by-email' }]);
+            q('.plg-oauth-edit-btn').click();
+            expect(q('.plg-f-jitRoles')).toBeNull();
+
+            type('.plg-f-linkingStrategy', 'jit-create');
+            expect(q('.plg-f-jitRoles')).not.toBeNull();
+            expect(reported[0].linkingStrategy).toBe('jit-create');
+
+            type('.plg-f-linkingStrategy', 'sub-only');
+            expect(q('.plg-f-jitRoles')).toBeNull();
+            expect(reported[0].linkingStrategy).toBe('sub-only');
+        });
+
+        test('a role selection made while visible survives being hidden and shown again', async () => {
+            mount([{ id: 'okta', preset: 'oidc', enabled: true, order: 10, linkingStrategy: 'jit-create' }],
+                { roles: ['user', 'editor'] });
+            await new Promise(resolve => setTimeout(resolve, 0));
+            q('.plg-oauth-edit-btn').click();
+
+            const select = q('.plg-f-jitRoles');
+            Array.from(select.options).forEach(o => { o.selected = (o.value === 'editor'); });
+            select.dispatchEvent(new window.Event('change', { bubbles: true }));
+            expect(reported[0].jitRoles).toEqual(['editor']);
+
+            type('.plg-f-linkingStrategy', 'link-by-email'); // hides the field, doesn't touch the value
+            expect(reported[0].jitRoles).toEqual(['editor']);
+
+            type('.plg-f-linkingStrategy', 'jit-create'); // shown again, previous choice still there
+            expect(Array.from(q('.plg-f-jitRoles').selectedOptions).map(o => o.value)).toEqual(['editor']);
         });
     });
 

@@ -1,4 +1,4 @@
-# jPulse Framework / Plugins / Auth-OAuth / README v1.0.1
+# jPulse Framework / Plugins / Auth-OAuth / README v1.0.2
 
 OAuth 2.0 / OpenID Connect (OIDC) single sign-on plugin for jPulse Framework. Supports public sites
 (Google) and org-internal sites (Microsoft Entra ID, Okta, Auth0, Keycloak, ADFS via generic OIDC
@@ -152,6 +152,14 @@ This plugin extends the user schema with:
   other jPulse plugin, appends a page link to the user menu's "jPulse Plugins" section) was never
   added, so nothing anywhere in the framework's navigation linked to it. Adds a "Connected Accounts"
   entry, matching the `auth-mfa`/`hello-world` pattern - no other behavior changes.
+- **Version 1.0.2 - Bugfix**: Fixes the admin provider config form always showing "JIT: Override
+  Roles" and "JIT: Status", even for a provider whose effective Linking Strategy (its own override,
+  or the inherited global default) isn't `jit-create` - fields that, in that case, have zero effect
+  no matter what's selected. Found live during real production configuration: an admin, having just
+  set a provider to `link-by-email`, reasonably asked why roles needed selecting again immediately
+  below it. The two fields now only render when the effective strategy is `jit-create`, updating
+  live as Linking Strategy is switched, without discarding a previously chosen selection if the
+  admin switches away and back. No server-side or schema changes - config renderer only.
 
 ## License
 

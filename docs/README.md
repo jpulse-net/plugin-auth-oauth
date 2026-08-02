@@ -1,4 +1,4 @@
-# jPulse Framework / Plugins / Auth-OAuth / User Documentation v1.0.1
+# jPulse Framework / Plugins / Auth-OAuth / User Documentation v1.0.2
 
 Adds "Sign in with..." buttons to your login page for OAuth 2.0 / OpenID Connect identity providers
 (Google, Microsoft Entra ID, Okta, Auth0, Keycloak, ADFS, or any generic OIDC/OAuth2 provider).
@@ -251,7 +251,10 @@ JIT-created accounts default to the "JIT: Default Roles" setting, which offers a
 site's configured roles (Admin UI → General tab) for each provider to override individually via
 "JIT: Override Roles" - this site's admin roles can never be auto-assigned this way, even by a
 misconfiguration. Use "JIT: Default Status" to require admin approval before a JIT-created account
-can log in.
+can log in. Since none of this applies to a provider using `sub-only` or `link-by-email`, the
+per-provider "JIT: Override Roles"/"JIT: Status" fields only appear in that provider's edit form
+when its effective Linking Strategy (its own override, or the inherited global default above) is
+JIT create.
 
 ## Security notes
 

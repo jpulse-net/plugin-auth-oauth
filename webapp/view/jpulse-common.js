@@ -18,8 +18,8 @@
  *                    against, so it stays a dedicated admin-endpoint call and is disabled for a
  *                    provider that only exists locally (added this session, not yet saved).
  * @file            plugins/auth-oauth/webapp/view/jpulse-common.js
- * @version         1.0.1
- * @release         2026-07-31
+ * @version         1.0.2
+ * @release         2026-08-01
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -151,6 +151,14 @@ window.jPulse.plugins.authOauth = {
 
         function presetDefOf(entry) {
             return ns._PRESETS[entry && entry.preset] || ns._PRESETS.google;
+        }
+
+        /** This provider's own override if set, else the global default (plugin.json's own
+         *  fallback, in case ctx.config hasn't loaded it for some reason) - the same resolution
+         *  order oauthClient.js's resolveProviderConfig() uses server-side. Governs whether the
+         *  JIT-only fields below actually do anything for this provider. */
+        function effectiveLinkingStrategy(entry) {
+            return entry.linkingStrategy || (ctx.config && ctx.config.defaultLinkingStrategy) || 'link-by-email';
         }
 
         /** A raw SVG string would just show as unreadable markup in a text input's `placeholder`
@@ -382,6 +390,13 @@ window.jPulse.plugins.authOauth = {
                 ['pending', 'Pending approval']
             ].map(([value, label]) =>
                 `<option value="${value}"${(entry.jitStatus || '') === value ? ' selected' : ''}>${escape(label)}</option>`).join('');
+            // The two JIT-only fields below have zero effect unless this provider's *effective*
+            // strategy (its own override, or the inherited global default) is jit-create - shown
+            // unconditionally before this fix, which is exactly the "showable but doesn't apply"
+            // confusion Gap 1 already flagged for incomplete providers. Hidden entirely rather than
+            // just disabled/greyed, and kept live as the admin toggles Linking Strategy (see the
+            // dedicated change listener below, mirroring how the preset switch re-renders the form).
+            const showJitFields = effectiveLinkingStrategy(entry) === 'jit-create';
 
             const formEl = container.querySelector('.plg-oauth-form-container');
             formEl.innerHTML =
@@ -418,11 +433,13 @@ window.jPulse.plugins.authOauth = {
                     fieldRow('Userinfo URL', `<input type="text" class="jp-form-input plg-f-userinfoUrl" value="${attrEscape(entry.userinfoUrl || '')}">`, '') +
                     fieldRow('Userinfo Mapping', `<textarea class="jp-form-textarea plg-f-userinfoMapping" rows="2" placeholder='{"sub":"id","email":"primary_email"}'>${escape(entry.userinfoMapping ? JSON.stringify(entry.userinfoMapping) : '')}</textarea>`, 'JSON object mapping jPulse claim names to this provider\'s userinfo field names.') : '') +
 
-                fieldRow('Linking Strategy', `<select class="jp-form-input plg-f-linkingStrategy">${linkingOptions}</select>`, 'Overrides the global default for this provider only') +
+                fieldRow('Linking Strategy', `<select class="jp-form-input plg-f-linkingStrategy">${linkingOptions}</select>`,
+                    'Overrides the global default for this provider only. The two JIT settings below only appear - and only apply - when this provider\'s effective strategy is JIT create.') +
                 fieldRow('Allowed Domains', `<input type="text" class="jp-form-input plg-f-allowedDomains" value="${attrEscape((entry.allowedDomains || []).join(', '))}" placeholder="corp.example.com">`, 'Comma-separated. Leave blank to allow any domain.') +
-                fieldRow('JIT: Override Roles', `<select multiple class="jp-form-input plg-f-jitRoles" size="3">${roleOptionsHtml(entry.jitRoles)}</select>`,
-                    'Roles assigned to users JIT-created via this provider, overriding the global "JIT: Default Roles". Select nothing to inherit the global default. This site\'s admin roles are never shown here and can never be auto-provisioned this way.') +
-                fieldRow('JIT: Status', `<select class="jp-form-input plg-f-jitStatus">${statusOptions}</select>`, '') +
+                (showJitFields ?
+                    fieldRow('JIT: Override Roles', `<select multiple class="jp-form-input plg-f-jitRoles" size="3">${roleOptionsHtml(entry.jitRoles)}</select>`,
+                        'Roles assigned to users JIT-created via this provider, overriding the global "JIT: Default Roles". Select nothing to inherit the global default. This site\'s admin roles are never shown here and can never be auto-provisioned this way.') +
+                    fieldRow('JIT: Status', `<select class="jp-form-input plg-f-jitStatus">${statusOptions}</select>`, '') : '') +
 
                 fieldRow('Redirect URI', `<input type="text" class="jp-form-input plg-f-redirectUri" value="${attrEscape(redirectUri(entry.id))}" readonly> ` +
                     '<button type="button" class="jp-btn jp-btn-sm jp-btn-secondary plg-oauth-copy-btn">Copy</button>',
@@ -469,11 +486,17 @@ window.jPulse.plugins.authOauth = {
                 renderForm(); // the preset decides which endpoint fields are shown
             });
 
+            formEl.querySelector('.plg-f-linkingStrategy').addEventListener('change', () => {
+                syncFormToEntry(entry);
+                renderForm(); // the effective strategy decides whether the JIT-only fields show
+            });
+
             // Every other field writes straight into `entry` (already live in `providers`) on
             // every input/change - there is no separate commit step (see file header).
             formEl.querySelectorAll('input, select, textarea').forEach(el => {
-                if (el.classList.contains('plg-f-preset') || el.classList.contains('plg-f-redirectUri')) {
-                    return; // preset handled above; redirectUri is read-only/derived
+                if (el.classList.contains('plg-f-preset') || el.classList.contains('plg-f-redirectUri') ||
+                        el.classList.contains('plg-f-linkingStrategy')) {
+                    return; // preset and linkingStrategy handled above; redirectUri is read-only/derived
                 }
                 const eventName = (el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'color') ? 'change' : 'input';
                 el.addEventListener(eventName, () => syncFormToEntry(entry));
@@ -546,9 +569,19 @@ window.jPulse.plugins.authOauth = {
             entry.scopes = toList(formEl.querySelector('.plg-f-scopes').value);
             entry.linkingStrategy = formEl.querySelector('.plg-f-linkingStrategy').value || null;
             entry.allowedDomains = toList(formEl.querySelector('.plg-f-allowedDomains').value);
-            const selectedJitRoles = Array.from(formEl.querySelector('.plg-f-jitRoles').selectedOptions).map(o => o.value);
-            entry.jitRoles = selectedJitRoles.length > 0 ? selectedJitRoles : null;
-            entry.jitStatus = formEl.querySelector('.plg-f-jitStatus').value || null;
+            // Not rendered at all when the effective strategy isn't jit-create (see showJitFields
+            // in renderForm()) - leave entry.jitRoles/jitStatus as whatever they were last set to
+            // rather than wiping them, so flipping the strategy back and forth doesn't lose a
+            // deliberate earlier choice. They're inert either way until the strategy is jit-create.
+            const jitRolesEl = formEl.querySelector('.plg-f-jitRoles');
+            if (jitRolesEl) {
+                const selectedJitRoles = Array.from(jitRolesEl.selectedOptions).map(o => o.value);
+                entry.jitRoles = selectedJitRoles.length > 0 ? selectedJitRoles : null;
+            }
+            const jitStatusEl = formEl.querySelector('.plg-f-jitStatus');
+            if (jitStatusEl) {
+                entry.jitStatus = jitStatusEl.value || null;
+            }
 
             // Endpoint fields are gated on the *new* preset, not just on the field being present:
             // during a preset change this runs against the outgoing preset's DOM, and a leftover
