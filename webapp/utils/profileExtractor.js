@@ -11,7 +11,7 @@
  *                   about. Checking "is the DB value empty" would never work here, since it's
  *                   never empty by construction.
  * @file            plugins/auth-oauth/webapp/utils/profileExtractor.js
- * @version         1.0.4
+ * @version         1.0.5
  * @release         2026-09-30
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/

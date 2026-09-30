@@ -8,7 +8,7 @@
  *                   that navigates to the dedicated linked-accounts page, see W-197 design doc §"UI
  *                   Components") rather than trying to model each provider as a W-107 field.
  * @file            plugins/auth-oauth/webapp/model/oauthAuth.js
- * @version         1.0.4
+ * @version         1.0.5
  * @release         2026-09-30
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -18,6 +18,9 @@
  */
 
 import { ObjectId } from 'mongodb';
+
+// Same shield as plugin.json. Profile tabs insert a string that starts with <svg as HTML.
+const AUTH_OAUTH_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><circle cx="12" cy="10" r="2" /><path d="M12 12v4" /></svg>';
 
 class OauthAuthModel {
 
@@ -41,7 +44,7 @@ class OauthAuthModel {
                     adminCard: {
                         visible: true,
                         label: 'SSO Providers',
-                        icon: '🔑',
+                        icon: AUTH_OAUTH_ICON,
                         description: 'Linked single sign-on identity providers for this user',
                         order: 90,
                         actions: [
@@ -56,7 +59,7 @@ class OauthAuthModel {
                     userCard: {
                         visible: true,
                         label: 'Connected Accounts',
-                        icon: '🔑',
+                        icon: AUTH_OAUTH_ICON,
                         description: 'Sign in with Google, Okta, or other identity providers',
                         order: 20,
                         actions: [

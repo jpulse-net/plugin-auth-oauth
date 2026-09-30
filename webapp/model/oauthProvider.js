@@ -7,7 +7,7 @@
  *                   `pluginConfigs` (a heavily-read collection on every request) so secrets get
  *                   their own access boundary. See W-197 design doc §8.
  * @file            plugins/auth-oauth/webapp/model/oauthProvider.js
- * @version         1.0.4
+ * @version         1.0.5
  * @release         2026-09-30
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/

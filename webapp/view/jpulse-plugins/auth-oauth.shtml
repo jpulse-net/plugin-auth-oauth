@@ -10,7 +10,7 @@
  *                   No plugin-level i18n mechanism exists in the framework yet (see oauth-error.shtml
  *                   file header) - all strings below are English-only for now.
  * @file            plugins/auth-oauth/webapp/view/jpulse-plugins/auth-oauth.shtml
- * @version         1.0.4
+ * @version         1.0.5
  * @release         2026-09-30
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -79,7 +79,7 @@
     {{#component "pluginCards.authOauth" order=5}}
         {{!-- Automatically included in the dashboard at jpulse-plugins/index.shtml --}}
         <a href="/jpulse-plugins/auth-oauth.shtml" class="jp-card-dashboard jp-icon-btn">
-            <div class="jp-icon-container">🔑</div>
+            <div class="jp-icon-container"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><circle cx="12" cy="10" r="2" /><path d="M12 12v4" /></svg></div>
             <h3 class="jp-card-title">Connected Accounts</h3>
             <p class="jp-card-description">
                 Manage single sign-on providers linked to your account
@@ -90,7 +90,7 @@
     <main class="jp-main">
         <div class="jp-container-1000">
             <div class="jp-page-header">
-                <h1>🔑 Connected Accounts</h1>
+                <h1><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><circle cx="12" cy="10" r="2" /><path d="M12 12v4" /></svg> Connected Accounts</h1>
                 <span class="jp-subtitle">Sign in with Google, Okta, or other identity providers</span>
             </div>
 

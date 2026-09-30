@@ -1,6 +1,6 @@
 {
     "name": "@jpulse-net/plugin-auth-oauth",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "type": "module",
     "description": "OAuth 2.0 / OpenID Connect single sign-on plugin for jPulse Framework",
     "keywords": [
