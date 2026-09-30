@@ -3,12 +3,20 @@
     "version": "1.0.4",
     "type": "module",
     "description": "OAuth 2.0 / OpenID Connect single sign-on plugin for jPulse Framework",
-    "keywords": ["jpulse", "jpulse-plugin", "oauth", "oauth2", "oidc", "sso", "authentication"],
+    "keywords": [
+        "jpulse",
+        "jpulse-plugin",
+        "oauth",
+        "oauth2",
+        "oidc",
+        "sso",
+        "authentication"
+    ],
     "author": "jPulse Team <team@jpulse.net>",
     "license": "BSL-1.1",
     "repository": {
         "type": "git",
-        "url": "https://github.com/jpulse-net/plugin-auth-oauth.git"
+        "url": "git+https://github.com/jpulse-net/plugin-auth-oauth.git"
     },
     "publishConfig": {
         "registry": "https://npm.pkg.github.com",
