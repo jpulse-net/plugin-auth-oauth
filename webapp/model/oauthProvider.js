@@ -7,13 +7,13 @@
  *                   `pluginConfigs` (a heavily-read collection on every request) so secrets get
  *                   their own access boundary. See W-197 design doc §8.
  * @file            plugins/auth-oauth/webapp/model/oauthProvider.js
- * @version         1.0.3
- * @release         2026-08-02
+ * @version         1.0.4
+ * @release         2026-09-30
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @license         BSL 1.1 -- see LICENSE file; for commercial use: team@jpulse.net
- * @genai           80%, Cursor 3.12, Claude Sonnet 5
+ * @genai           80%, Cursor 3.20, Grok 4.6
  */
 
 import database from '../../../../webapp/database.js';
@@ -23,7 +23,7 @@ import { resolveProviderConfig } from '../utils/providerRegistry.js';
 
 const COLLECTION_NAME = 'authOauth_providers';
 const SECRET_SALT = 'oauth-provider-salt';
-const CONFIG_CACHE_PATH = 'plugin:auth-oauth:config';
+const CONFIG_CACHE_PATH = 'model:oauthProvider:config';
 const CONFIG_CACHE_KEY = 'providers';
 const CONFIG_CACHE_TTL_SECONDS = 20;
 

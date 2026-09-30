@@ -40,8 +40,8 @@
  *                   login-page cache; the create/update/delete endpoints remain available as a
  *                   standalone API surface but the admin UI no longer drives them.
  * @file            plugins/auth-oauth/webapp/controller/oauthAuth.js
- * @version         1.0.3
- * @release         2026-08-02
+ * @version         1.0.4
+ * @release         2026-09-30
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
@@ -488,8 +488,8 @@ class OauthAuthController {
      * longer needs its own separate Save button (design doc, formerly a documented "known gotcha").
      * The renderer now only ever mutates its in-memory `providers` array locally; this hook is
      * what actually validates, sanitizes, and encrypts secrets right before `PluginModel.upsert()`.
-     * Throwing here aborts the whole save with a 400 (`CONFIG_SAVE_REJECTED`) - the only hook in
-     * the framework where "cancel" means throw rather than returning false.
+     * Throwing here aborts the whole save with a 400 (`CONFIG_SAVE_REJECTED`); as of jPulse
+     * v1.7.13, throw-to-abort is the cancellation model for every hook.
      * @param {{ req: object, pluginName: string, configData: object, oldConfig: object }} context
      */
     static async onPluginConfigBeforeSave(context) {

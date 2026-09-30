@@ -1,8 +1,6 @@
-# jPulse Framework / Plugins / Auth-OAuth / README v1.0.3
+# jPulse Framework / Plugins / Auth-OAuth / README v1.0.4
 
-OAuth 2.0 / OpenID Connect (OIDC) single sign-on plugin for jPulse Framework. Supports public sites
-(Google) and org-internal sites (Microsoft Entra ID, Okta, Auth0, Keycloak, ADFS via generic OIDC
-discovery), plus a manual OAuth2 preset for non-OIDC providers.
+OAuth 2.0 / OpenID Connect (OIDC) single sign-on plugin for jPulse Framework. Supports public sites (Google) and org-internal sites (Microsoft Entra ID, Okta, Auth0, Keycloak, ADFS via generic OIDC discovery), plus a manual OAuth2 preset for non-OIDC providers.
 
 ## Features
 
@@ -33,8 +31,7 @@ Configure via Admin UI at `/admin/plugins/auth-oauth` or via plugin config API.
 | `profileRequiredFields` | `['firstName', 'lastName']` | Fields that trigger the profile-completion step for JIT users when the IdP didn't provide them |
 | `providers` | `[]` | Identity provider list (managed via the admin UI's provider table) |
 
-See `docs/README.md` for provider setup guides (Google, Microsoft Entra ID, Okta, Keycloak) and the
-migration walkthrough for moving an existing internal-auth site to SSO.
+See `docs/README.md` for provider setup guides (Google, Microsoft Entra ID, Okta, Keycloak) and the migration walkthrough for moving an existing internal-auth site to SSO.
 
 ## API Endpoints
 
@@ -108,15 +105,8 @@ This plugin extends the user schema with:
 - ID token signature verified via provider JWKS; `iss`/`aud`/`exp` checked
 - Client secrets encrypted at rest (`webapp/utils/crypto-secrets.js`), never returned to the admin UI after initial entry
 - Only Authorization Code + PKCE — no implicit flow, no resource owner password credentials
-- Admin-controlled `label`/`icon`/`buttonColor` fields render raw/unescaped on the login page, so
-  they're validated/sanitized server-side on every create/update (not just the admin UI form); the
-  config UI reads them back through an attribute-safe escaper, since `jPulse.string.escapeHtml()`
-  escapes for element content and leaves `"` intact
-- `link-by-email`/`jit-create` require the matched/created local account's email to be verified
-  (`emailVerified`) - a matched account with `emailVerified: false` is rejected
-  (`LOCAL_EMAIL_NOT_VERIFIED`) rather than linked, and every `jit-create`d account is stamped
-  `emailVerified: true` since the IdP already vouched for it; see `docs/README.md`'s Security notes
-  for the full explanation
+- Admin-controlled `label`/`icon`/`buttonColor` fields render raw/unescaped on the login page, so they're validated/sanitized server-side on every create/update (not just the admin UI form); the config UI reads them back through an attribute-safe escaper, since `jPulse.string.escapeHtml()` escapes for element content and leaves `"` intact
+- `link-by-email`/`jit-create` require the matched/created local account's email to be verified (`emailVerified`) - a matched account with `emailVerified: false` is rejected (`LOCAL_EMAIL_NOT_VERIFIED`) rather than linked, and every `jit-create`d account is stamped `emailVerified: true` since the IdP already vouched for it; see `docs/README.md`'s Security notes for the full explanation
 
 ## Requirements
 
@@ -129,46 +119,11 @@ This plugin extends the user schema with:
 
 ## Plugin Releases
 
-- **Version 1.0.0 - Initial Release**: OAuth 2.0 / OpenID Connect single sign-on with branded
-  presets for Google and Microsoft Entra ID, a generic OIDC preset (Okta, Auth0, Keycloak, ADFS, or
-  any discovery-URL provider), and a manual OAuth2 preset for non-OIDC providers - multiple
-  providers configurable side by side. Three per-provider linking strategies (`sub-only`,
-  `link-by-email`, `jit-create`) with `allowedDomains` restriction and dynamic exclusion of this
-  site's admin-equivalent roles from JIT role selection (never just hidden in the UI - stripped
-  server-side too, sourced from the framework's `getEffectiveAdminRoles()` rather than a hardcoded
-  `admin`/`root` list). JIT provisioning with best-effort profile extraction and an interactive
-  completion step for fields the IdP didn't supply. Admin provider-management UI is a single live
-  table - every edit persists through the framework's one page-level Save Changes button via the
-  `onPluginConfigBeforeSave` hook, which also encrypts a newly-entered Client Secret - with computed
-  redirect URIs, OIDC discovery testing, and emoji/SVG icon branding. Integrates with the
-  framework's `emailVerified` and unique-email primitives (v1.7.6) so `link-by-email`/`jit-create`
-  require a verified email, closing an OAuth pre-linking account-takeover. Composes with `auth-mfa`
-  via the framework's multi-step login flow. Manually tested end-to-end against a live Google IdP;
-  Microsoft Entra ID verified for `sub-only` linking only - see `docs/README.md`'s Microsoft Entra
-  ID section for a known `email_verified` limitation affecting `link-by-email`/`jit-create` on that
-  preset.
-- **Version 1.0.1 - Bugfix**: Fixes the linked-accounts page (`/jpulse-plugins/auth-oauth.shtml`)
-  being unreachable from the UI since v1.0.0 - `webapp/view/jpulse-navigation.js` (present in every
-  other jPulse plugin, appends a page link to the user menu's "jPulse Plugins" section) was never
-  added, so nothing anywhere in the framework's navigation linked to it. Adds a "Connected Accounts"
-  entry, matching the `auth-mfa`/`hello-world` pattern - no other behavior changes.
-- **Version 1.0.2 - Bugfix**: Fixes the admin provider config form always showing "JIT: Override
-  Roles" and "JIT: Status", even for a provider whose effective Linking Strategy (its own override,
-  or the inherited global default) isn't `jit-create` - fields that, in that case, have zero effect
-  no matter what's selected. Found live during real production configuration: an admin, having just
-  set a provider to `link-by-email`, reasonably asked why roles needed selecting again immediately
-  below it. The two fields now only render when the effective strategy is `jit-create`, updating
-  live as Linking Strategy is switched, without discarding a previously chosen selection if the
-  admin switches away and back. No server-side or schema changes - config renderer only.
-- **Version 1.0.3 - Bugfix**: Fixes `redirect_uri_mismatch` at Google's consent screen on any
-  deployment behind a TLS-terminating reverse proxy (e.g. the framework's own reference nginx
-  config) - found on `bubblemap.net`'s very first live Google login attempt. `computeRedirectUri()`
-  and the callback handler's `currentUrl` reconstruction both used Express's `req.protocol`
-  directly, which resolves to `http` behind a proxy since the framework never calls `app.set('trust
-  proxy', ...)` (a framework-level gap, filed as `W-203` - not fixed in this plugin release).
-  Both call sites now go through a new `getRequestProtocol()` helper that prefers
-  `X-Forwarded-Proto`, mirroring the plugin's existing `getClientIp()` pattern for the same class of
-  problem with IP addresses. No config or schema changes.
+- **1.0.4, 2026-09-30 - Bugfix**: The login-page provider list is cached for real. Since 1.0.0 the Redis path was `plugin:auth-oauth:config`. A cache write only accepts `controller`, `model`, `view`, or `util` as the first segment, so every write was rejected, every login-page render read MongoDB, and the rejection was logged. The path is now `model:oauthProvider:config` (same 20-second TTL; a provider-list save still clears it). The plugin icon on Admin → Plugins and the config page is an inline SVG (a shield with a keyhole) instead of the 🔑 emoji. No config or schema changes.
+- **1.0.3, 2026-08-02 - Bugfix**: Fixes `redirect_uri_mismatch` at Google's consent screen on any deployment behind a TLS-terminating reverse proxy (e.g. the framework's own reference nginx config) - found on `bubblemap.net`'s very first live Google login attempt. `computeRedirectUri()` and the callback handler's `currentUrl` reconstruction both used Express's `req.protocol` directly, which resolves to `http` behind a proxy since the framework never calls `app.set('trust proxy', ...)` (a framework-level gap, filed as `W-203` - not fixed in this plugin release). Both call sites now go through a new `getRequestProtocol()` helper that prefers `X-Forwarded-Proto`, mirroring the plugin's existing `getClientIp()` pattern for the same class of problem with IP addresses. No config or schema changes.
+- **1.0.2, 2026-08-01 - Bugfix**: Fixes the admin provider config form always showing "JIT: Override Roles" and "JIT: Status", even for a provider whose effective Linking Strategy (its own override, or the inherited global default) isn't `jit-create` - fields that, in that case, have zero effect no matter what's selected. Found live during real production configuration: an admin, having just set a provider to `link-by-email`, reasonably asked why roles needed selecting again immediately below it. The two fields now only render when the effective strategy is `jit-create`, updating live as Linking Strategy is switched, without discarding a previously chosen selection if the admin switches away and back. No server-side or schema changes - config renderer only.
+- **1.0.1, 2026-07-31 - Bugfix**: Fixes the linked-accounts page (`/jpulse-plugins/auth-oauth.shtml`) being unreachable from the UI since v1.0.0 - `webapp/view/jpulse-navigation.js` (present in every other jPulse plugin, appends a page link to the user menu's "jPulse Plugins" section) was never added, so nothing anywhere in the framework's navigation linked to it. Adds a "Connected Accounts" entry, matching the `auth-mfa`/`hello-world` pattern - no other behavior changes.
+- **1.0.0, 2026-07-31 - Initial Release**: OAuth 2.0 / OpenID Connect single sign-on with branded presets for Google and Microsoft Entra ID, a generic OIDC preset (Okta, Auth0, Keycloak, ADFS, or any discovery-URL provider), and a manual OAuth2 preset for non-OIDC providers - multiple providers configurable side by side. Three per-provider linking strategies (`sub-only`, `link-by-email`, `jit-create`) with `allowedDomains` restriction and dynamic exclusion of this site's admin-equivalent roles from JIT role selection (never just hidden in the UI - stripped server-side too, sourced from the framework's `getEffectiveAdminRoles()` rather than a hardcoded `admin`/`root` list). JIT provisioning with best-effort profile extraction and an interactive completion step for fields the IdP didn't supply. Admin provider-management UI is a single live table - every edit persists through the framework's one page-level Save Changes button via the `onPluginConfigBeforeSave` hook, which also encrypts a newly-entered Client Secret - with computed redirect URIs, OIDC discovery testing, and emoji/SVG icon branding. Integrates with the framework's `emailVerified` and unique-email primitives (v1.7.6) so `link-by-email`/`jit-create` require a verified email, closing an OAuth pre-linking account-takeover. Composes with `auth-mfa` via the framework's multi-step login flow. Manually tested end-to-end against a live Google IdP; Microsoft Entra ID verified for `sub-only` linking only - see `docs/README.md`'s Microsoft Entra ID section for a known `email_verified` limitation affecting `link-by-email`/`jit-create` on that preset.
 
 ## License
 

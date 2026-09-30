@@ -5,13 +5,13 @@
  *                   encryption round-trip through a mocked authOauth_providers collection, and
  *                   getProviderWithSecret() merging preset defaults + decrypted secret
  * @file            plugins/auth-oauth/webapp/tests/unit/model/oauth-provider.test.js
- * @version         1.0.3
- * @release         2026-08-02
+ * @version         1.0.4
+ * @release         2026-09-30
  * @repository      https://github.com/jpulse-net/plugin-auth-oauth
  * @author          Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @copyright       2025-2026 Peter Thoeny, https://twiki.org & https://github.com/peterthoeny/
  * @license         BSL 1.1 -- see LICENSE file; for commercial use: team@jpulse.net
- * @genai           80%, Cursor 3.12, Claude Sonnet 5
+ * @genai           80%, Cursor 3.20, Grok 4.6
  */
 
 import { describe, test, expect, jest, beforeEach } from '@jest/globals';
@@ -182,7 +182,7 @@ describe('OauthProviderModel', () => {
             const first = await OauthProviderModel.getCachedProviders();
             expect(first).toHaveLength(2);
             expect(global.RedisManager.cacheSetObject).toHaveBeenCalledWith(
-                'plugin:auth-oauth:config', 'providers', first, expect.objectContaining({ ttl: expect.any(Number) }));
+                'model:oauthProvider:config', 'providers', first, expect.objectContaining({ ttl: expect.any(Number) }));
 
             mockState.pluginDoc = { config: { providers: [] } }; // change underlying data
             const second = await OauthProviderModel.getCachedProviders();
