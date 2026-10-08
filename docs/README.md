@@ -6,7 +6,8 @@ Adds "Sign in with..." buttons to your login page for OAuth 2.0 / OpenID Connect
 ## Quick start
 
 1. Install and enable the plugin (see `README.md`)
-2. Go to `/admin/plugins/auth-oauth` → "Providers" tab → **+ Add Provider**
+2. Go to **Admin** → **Plugins** → **auth-oauth** → **Configure** → **+ Add Provider**
+   (`/admin/plugin-config.shtml?plugin=auth-oauth#providers-tab`)
 3. Pick a preset (Google / Microsoft Entra ID / OIDC Provider / OAuth2 Provider), fill in the
    Client ID/Secret, and (for the Microsoft/OIDC presets) the identity provider's discovery URL
 4. Copy the computed **Redirect URI** shown in the form into your identity provider's console -
